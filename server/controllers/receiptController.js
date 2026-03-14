@@ -60,7 +60,15 @@ exports.createReceipt = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { reference: incomingRef, scheduledDate, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, moveLines, status: requestedStatus } = req.body;
+    const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
+    const initialStatus = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'draft';
+    const shouldAutoPost = initialStatus === 'done';
+
+    if (initialStatus !== 'draft' && req.user?.role !== 'manager') {
+      await session.abortTransaction();
+      return res.status(403).json({ success: false, message: 'Only managers can set non-draft status' });
+    }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -94,7 +102,7 @@ exports.createReceipt = async (req, res, next) => {
           pickingType: 'IN',
           scheduledDate,
           notes,
-          status: 'draft',
+          status: initialStatus,
           createdBy: req.user._id,
         },
       ],
@@ -111,13 +119,13 @@ exports.createReceipt = async (req, res, next) => {
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
         toLocationId: line.toLocationId,
-        status: 'draft',
+        status: initialStatus,
       }));
       createdLines = await StockMoveLine.insertMany(lines, { session });
     }
 
     // Auto-post newly created receipt quantities to stock for consistency.
-    if (createdLines.length > 0) {
+    if (createdLines.length > 0 && shouldAutoPost) {
       const qtyByProduct = new Map();
 
       for (const line of createdLines) {
@@ -158,9 +166,6 @@ exports.createReceipt = async (req, res, next) => {
       if (quantOps.length > 0) {
         await StockQuant.bulkWrite(quantOps, { session });
       }
-
-      receipt.status = 'done';
-      await receipt.save({ session });
     }
 
     await session.commitTransaction();
@@ -230,15 +235,25 @@ exports.updateReceipt = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Receipt not found' });
     }
 
-    if (receipt.status === 'done') {
-      return res.status(400).json({ success: false, message: 'Cannot edit a completed receipt' });
-    }
-
-    if (receipt.status === 'cancelled') {
-      return res.status(400).json({ success: false, message: 'Cannot edit a cancelled receipt' });
-    }
-
     const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
+
+    const statusChanged = !!status && status !== receipt.status;
+
+    if (statusChanged && req.user?.role !== 'manager') {
+      return res.status(403).json({ success: false, message: 'Only managers can change status' });
+    }
+
+    if (['done', 'cancelled'].includes(receipt.status)) {
+      const hasNonStatusChange =
+        (incomingRef && incomingRef.trim() && incomingRef.trim() !== receipt.reference) ||
+        scheduledDate !== undefined ||
+        notes !== undefined ||
+        (Array.isArray(moveLines) && moveLines.length > 0);
+
+      if (hasNonStatusChange) {
+        return res.status(400).json({ success: false, message: `Cannot edit a ${receipt.status} receipt` });
+      }
+    }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {

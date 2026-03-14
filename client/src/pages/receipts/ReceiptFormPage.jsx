@@ -173,7 +173,7 @@ export default function ReceiptFormPage() {
     saveMutation.mutate({
       reference: formData.reference,
       scheduledDate: formData.scheduledDate,
-      status: 'draft',
+      status: isManager ? status : 'draft',
       moveLines,
     });
   };
@@ -297,6 +297,19 @@ export default function ReceiptFormPage() {
                 {errors.scheduledDate.message}
               </p>
             )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="input-field"
+              disabled={!isManager}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
       </form>

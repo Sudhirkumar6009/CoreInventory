@@ -19,7 +19,6 @@ exports.getDeliveries = async (req, res, next) => {
     if (search) {
       filter.$or = [
         { reference: { $regex: search, $options: 'i' } },
-        { supplierOrCustomer: { $regex: search, $options: 'i' } },
       ];
     }
     if (dateFrom || dateTo) {
@@ -56,7 +55,15 @@ exports.createDelivery = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, moveLines, status: requestedStatus } = req.body;
+    const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
+    const initialStatus = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'draft';
+    const shouldAutoPost = initialStatus === 'done';
+
+    if (initialStatus !== 'draft' && req.user?.role !== 'manager') {
+      await session.abortTransaction();
+      return res.status(403).json({ success: false, message: 'Only managers can set non-draft status' });
+    }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -89,10 +96,9 @@ exports.createDelivery = async (req, res, next) => {
         {
           reference,
           pickingType: 'OUT',
-          supplierOrCustomer,
           scheduledDate,
           notes,
-          status: 'draft',
+          status: initialStatus,
           createdBy: req.user._id,
         },
       ],
@@ -108,13 +114,13 @@ exports.createDelivery = async (req, res, next) => {
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
         fromLocationId: line.fromLocationId,
-        status: 'draft',
+        status: initialStatus,
       }));
       createdLines = await StockMoveLine.insertMany(lines, { session });
     }
 
     // Auto-post newly created delivery quantities to stock for consistency.
-    if (createdLines.length > 0) {
+    if (createdLines.length > 0 && shouldAutoPost) {
       const qtyByProduct = new Map();
 
       for (const line of createdLines) {
@@ -171,9 +177,6 @@ exports.createDelivery = async (req, res, next) => {
           { session }
         );
       }
-
-      delivery.status = 'done';
-      await delivery.save({ session });
     }
 
     await session.commitTransaction();
@@ -237,11 +240,25 @@ exports.updateDelivery = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Delivery not found' });
     }
 
-    if (['done', 'cancelled'].includes(delivery.status)) {
-      return res.status(400).json({ success: false, message: `Cannot edit a ${delivery.status} delivery` });
+    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
+
+    const statusChanged = !!status && status !== delivery.status;
+
+    if (statusChanged && req.user?.role !== 'manager') {
+      return res.status(403).json({ success: false, message: 'Only managers can change status' });
     }
 
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, status, moveLines } = req.body;
+    if (['done', 'cancelled'].includes(delivery.status)) {
+      const hasNonStatusChange =
+        (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) ||
+        scheduledDate !== undefined ||
+        notes !== undefined ||
+        (Array.isArray(moveLines) && moveLines.length > 0);
+
+      if (hasNonStatusChange) {
+        return res.status(400).json({ success: false, message: `Cannot edit a ${delivery.status} delivery` });
+      }
+    }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -265,7 +282,6 @@ exports.updateDelivery = async (req, res, next) => {
       delivery.reference = incomingRef.trim();
     }
 
-    if (supplierOrCustomer !== undefined) delivery.supplierOrCustomer = supplierOrCustomer;
     if (scheduledDate !== undefined) delivery.scheduledDate = scheduledDate;
     if (notes !== undefined) delivery.notes = notes;
     if (status) delivery.status = status;
@@ -469,7 +485,6 @@ exports.returnDelivery = async (req, res, next) => {
         {
           reference: returnRef,
           pickingType: 'IN',
-          supplierOrCustomer: delivery.supplierOrCustomer,
           status: 'done',
           notes: `Return for ${delivery.reference}`,
           createdBy: req.user._id,

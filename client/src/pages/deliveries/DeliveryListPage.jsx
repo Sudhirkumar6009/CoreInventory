@@ -32,7 +32,6 @@ export default function DeliveryListPage() {
   const columns = [
     { key: 'date', label: 'Date', render: (r) => formatDate(r.scheduledDate || r.date || r.createdAt) },
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
-    { key: 'customer', label: 'Customer', render: (r) => r.customer || r.supplierOrCustomer || '--' },
     { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
   ]

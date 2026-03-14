@@ -37,6 +37,7 @@ export default function DeliveryFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { isManager } = useRole()
   const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Delivery' : `Delivery ${id}`)
 
@@ -61,14 +62,13 @@ export default function DeliveryFormPage() {
     if (delivery) {
       reset({
         reference: delivery.reference,
-        customer: delivery.customer,
         scheduledDate: delivery.scheduledDate?.split('T')[0],
         carrier: delivery.carrier,
       })
       setLines(normalizeLines(delivery.moveLines || delivery.lines || delivery.items || []))
       setStatus(delivery.status || 'draft')
     } else if (isNew) {
-      reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '' })
+      reset({ reference: previewRef('OUT'), scheduledDate: '', carrier: '' })
     }
   }, [delivery, isNew, reset]);
 
@@ -158,7 +158,7 @@ export default function DeliveryFormPage() {
       ...formData,
       reference: formData.reference || previewRef('OUT'),
       moveLines,
-      status: 'draft',
+      status: isManager ? status : 'draft',
     })
   }
 
@@ -297,6 +297,19 @@ export default function DeliveryFormPage() {
               placeholder="Carrier / courier name"
               disabled={isReadOnly}
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="input-field"
+              disabled={!isManager}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
       </form>
