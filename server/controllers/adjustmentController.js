@@ -52,7 +52,7 @@ exports.createAdjustment = async (req, res, next) => {
     const { reference: incomingRef, productId, locationId, countedQty, reason } = req.body;
 
     // Get current recorded qty
-    const stockQuant = await StockQuant.findOne({ productId, locationId });
+    const stockQuant = await StockQuant.findOne({ productId });
     const recordedQty = stockQuant ? stockQuant.quantity : 0;
     const delta = countedQty - recordedQty;
 
@@ -146,7 +146,7 @@ exports.validateAdjustment = async (req, res, next) => {
 
     // Apply delta to stock quant
     await StockQuant.findOneAndUpdate(
-      { productId: adjustment.productId, locationId: adjustment.locationId },
+      { productId: adjustment.productId },
       { $inc: { quantity: adjustment.delta } },
       { upsert: true, session }
     );

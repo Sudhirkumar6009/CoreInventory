@@ -240,7 +240,6 @@ exports.validateDelivery = async (req, res, next) => {
 
       const stockQuant = await StockQuant.findOne({
         productId: line.productId,
-        locationId: line.fromLocationId,
       }).session(session);
 
       const availableQty = stockQuant ? stockQuant.quantity - stockQuant.reservedQty : 0;
@@ -259,7 +258,7 @@ exports.validateDelivery = async (req, res, next) => {
       const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
 
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.fromLocationId },
+        { productId: line.productId },
         { $inc: { quantity: -qtyToDeliver } },
         { session }
       );
@@ -381,7 +380,7 @@ exports.returnDelivery = async (req, res, next) => {
     for (const line of moveLines) {
       // Re-add stock
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.fromLocationId },
+        { productId: line.productId },
         { $inc: { quantity: line.qtyDone } },
         { upsert: true, session }
       );

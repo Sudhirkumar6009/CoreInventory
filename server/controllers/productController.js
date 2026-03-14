@@ -1,68 +1,8 @@
-const Product = require("../models/Product");
-const ProductCategory = require("../models/ProductCategory");
-const StockQuant = require("../models/StockQuant");
-const ReorderRule = require("../models/ReorderRule");
-const Location = require("../models/Location");
-
-const toNumberOrDefault = (value, fallback = 0) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? fallback : parsed;
-};
-
-const normalizeProductPayload = (payload = {}, isUpdate = false) => {
-  const normalized = { ...payload };
-
-  const categoryId = payload.categoryId ?? payload.category;
-  if (categoryId !== undefined) normalized.categoryId = categoryId || null;
-
-  if (payload.unitOfMeasure !== undefined) {
-    normalized.uom = payload.unitOfMeasure;
-  }
-
-  if (payload.perUnitCost !== undefined) {
-    normalized.perUnitCost = toNumberOrDefault(payload.perUnitCost, 0);
-  }
-
-  if (payload.reorderPoint !== undefined) {
-    normalized.reorderPoint = toNumberOrDefault(payload.reorderPoint, 0);
-  }
-
-  if (payload.maxStock !== undefined) {
-    normalized.maxStock = toNumberOrDefault(payload.maxStock, 0);
-  }
-
-  if (!isUpdate && payload.initialStock !== undefined) {
-    normalized.initialStock = toNumberOrDefault(payload.initialStock, 0);
-  }
-
-  delete normalized.category;
-  delete normalized.unitOfMeasure;
-
-  return normalized;
-};
-
-const enrichProduct = (product, stock = null) => {
-  const hasStockData =
-    stock && (stock.onHand !== undefined || stock.reservedQty !== undefined);
-  const fallbackOnHand = toNumberOrDefault(product.initialStock, 0);
-  const onHand = hasStockData
-    ? toNumberOrDefault(stock.onHand, 0)
-    : fallbackOnHand;
-  const reservedQty = hasStockData
-    ? toNumberOrDefault(stock.reservedQty, 0)
-    : 0;
-
-  return {
-    ...product,
-    category: product.categoryId,
-    unitOfMeasure: product.uom,
-    perUnitCost: toNumberOrDefault(product.perUnitCost, 0),
-    onHand,
-    reservedQty,
-    freeToUse: onHand - reservedQty,
-  };
-};
+const mongoose = require('mongoose');
+const Product = require('../models/Product');
+const ProductCategory = require('../models/ProductCategory');
+const StockQuant = require('../models/StockQuant');
+const ReorderRule = require('../models/ReorderRule');
 
 // ==================== PRODUCTS ====================
 
@@ -159,6 +99,9 @@ exports.getProducts = async (req, res, next) => {
  * @access  Private (Manager)
  */
 exports.createProduct = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { name, sku, categoryId, uom, initialStock } = req.body;
 
@@ -170,10 +113,29 @@ exports.createProduct = async (req, res, next) => {
       initialStock: Number(initialStock || 0),
     };
 
-    const product = await Product.create(payload);
+    const [product] = await Product.create([payload], { session });
+
+    if (payload.initialStock > 0) {
+      await StockQuant.findOneAndUpdate(
+        { productId: product._id },
+        {
+          $set: {
+            quantity: payload.initialStock,
+            reservedQty: 0,
+          },
+        },
+        { upsert: true, session }
+      );
+    }
+
+    await session.commitTransaction();
+
     res.status(201).json({ success: true, data: product });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -312,41 +274,17 @@ exports.getProductStock = async (req, res, next) => {
         .json({ success: false, message: "Product not found" });
     }
 
-    const stockQuants = await StockQuant.find({ productId: product._id })
-      .populate({
-        path: "locationId",
-        populate: { path: "warehouseId", select: "name shortCode" },
-      })
-      .lean();
-
-    const totalOnHand = stockQuants.reduce(
-      (sum, sq) => sum + (sq.quantity || 0),
-      0,
-    );
-    const totalReserved = stockQuants.reduce(
-      (sum, sq) => sum + (sq.reservedQty || 0),
-      0,
-    );
-    const freeToUse = totalOnHand - totalReserved;
+    const stockQuant = await StockQuant.findOne({ productId: product._id }).lean();
+    const totalReserved = stockQuant?.reservedQty || 0;
+    const totalOnHand = stockQuant?.quantity || 0;
 
     res.json({
       success: true,
       data: {
-        product: {
-          id: product._id,
-          name: product.name,
-          sku: product.sku,
-          uom: product.uom,
-        },
+        product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
         totalOnHand,
         totalReserved,
-        freeToUse,
-        byLocation: stockQuants.map((sq) => ({
-          location: sq.locationId,
-          quantity: sq.quantity,
-          reservedQty: sq.reservedQty,
-          freeToUse: (sq.quantity || 0) - (sq.reservedQty || 0),
-        })),
+        byLocation: [],
       },
     });
   } catch (error) {

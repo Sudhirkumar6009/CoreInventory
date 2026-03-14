@@ -1,5 +1,4 @@
 const Location = require('../models/Location');
-const StockQuant = require('../models/StockQuant');
 
 /**
  * @desc    Get all locations
@@ -54,12 +53,8 @@ exports.getLocation = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Location not found' });
     }
 
-    // Get stock at this location
-    const stockQuants = await StockQuant.find({ locationId: location._id })
-      .populate('productId', 'name sku uom')
-      .lean();
-
-    location.stock = stockQuants;
+    // Stock is tracked at product level (not by location).
+    location.stock = [];
 
     res.json({ success: true, data: location });
   } catch (error) {
@@ -100,15 +95,6 @@ exports.deleteLocation = async (req, res, next) => {
 
     if (!location) {
       return res.status(404).json({ success: false, message: 'Location not found' });
-    }
-
-    // Check for existing stock
-    const hasStock = await StockQuant.findOne({ locationId: location._id, quantity: { $ne: 0 } });
-    if (hasStock) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete location with existing stock.',
-      });
     }
 
     await location.deleteOne();

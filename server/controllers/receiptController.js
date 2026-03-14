@@ -247,7 +247,7 @@ exports.validateReceipt = async (req, res, next) => {
 
       // Update or create stock quant
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.toLocationId },
+        { productId: line.productId },
         { $inc: { quantity: qtyToReceive } },
         { upsert: true, session }
       );
@@ -372,7 +372,7 @@ exports.returnReceipt = async (req, res, next) => {
     for (const line of moveLines) {
       // Decrease stock
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.toLocationId },
+        { productId: line.productId },
         { $inc: { quantity: -line.qtyDone } },
         { session }
       );
