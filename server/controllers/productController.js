@@ -13,14 +13,20 @@ const ReorderRule = require('../models/ReorderRule');
  */
 exports.getProducts = async (req, res, next) => {
   try {
-    const { search, category, page = 1, limit = 25, sort = '-createdAt' } = req.query;
+    const {
+      search,
+      category,
+      page = 1,
+      limit = 25,
+      sort = "-createdAt",
+    } = req.query;
 
     const filter = {};
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { sku: { $regex: search, $options: 'i' } },
+        { name: { $regex: search, $options: "i" } },
+        { sku: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -30,7 +36,7 @@ exports.getProducts = async (req, res, next) => {
 
     const total = await Product.countDocuments(filter);
     const products = await Product.find(filter)
-      .populate('categoryId', 'name shortCode')
+      .populate("categoryId", "name shortCode")
       .sort(sort)
       .skip((parseInt(page) - 1) * parseInt(limit))
       .limit(parseInt(limit))
@@ -44,20 +50,26 @@ exports.getProducts = async (req, res, next) => {
         { $match: { productId: { $in: productIds } } },
         {
           $group: {
-            _id: '$productId',
-            onHand: { $sum: '$quantity' },
-            reservedQty: { $sum: '$reservedQty' },
+            _id: "$productId",
+            onHand: { $sum: "$quantity" },
+            reservedQty: { $sum: "$reservedQty" },
           },
         },
       ]);
 
       stockMap = new Map(
-        stockSummary.map((row) => [String(row._id), { onHand: row.onHand || 0, reservedQty: row.reservedQty || 0 }])
+        stockSummary.map((row) => [
+          String(row._id),
+          { onHand: row.onHand || 0, reservedQty: row.reservedQty || 0 },
+        ]),
       );
     }
 
     const productsWithStock = products.map((product) => {
-      const stock = stockMap.get(String(product._id)) || { onHand: 0, reservedQty: 0 };
+      const stock = stockMap.get(String(product._id)) || {
+        onHand: 0,
+        reservedQty: 0,
+      };
       return {
         ...product,
         onHand: stock.onHand,
@@ -91,19 +103,13 @@ exports.createProduct = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const {
-      name,
-      sku,
-      categoryId,
-      uom,
-      initialStock,
-    } = req.body;
+    const { name, sku, categoryId, uom, initialStock } = req.body;
 
     const payload = {
       name,
       sku,
       categoryId: categoryId || null,
-      uom: uom || 'units',
+      uom: uom || "units",
       initialStock: Number(initialStock || 0),
     };
 
@@ -140,13 +146,32 @@ exports.createProduct = async (req, res, next) => {
  */
 exports.getProduct = async (req, res, next) => {
   try {
-    const product = await Product.findById(req.params.id).populate('categoryId', 'name shortCode');
+    const product = await Product.findById(req.params.id)
+      .populate("categoryId", "name shortCode")
+      .lean();
 
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
-    res.json({ success: true, data: product });
+    const stock = await StockQuant.aggregate([
+      { $match: { productId: product._id } },
+      {
+        $group: {
+          _id: "$productId",
+          onHand: { $sum: "$quantity" },
+          reservedQty: { $sum: "$reservedQty" },
+        },
+      },
+    ]);
+
+    const stockData = stock[0]
+      ? { onHand: stock[0].onHand, reservedQty: stock[0].reservedQty }
+      : null;
+
+    res.json({ success: true, data: enrichProduct(product, stockData) });
   } catch (error) {
     next(error);
   }
@@ -159,24 +184,7 @@ exports.getProduct = async (req, res, next) => {
  */
 exports.updateProduct = async (req, res, next) => {
   try {
-    const {
-      name,
-      sku,
-      categoryId,
-      uom,
-      perUnitCost,
-    } = req.body;
-
-    const payload = {
-      name,
-      sku,
-      categoryId: categoryId || null,
-      uom,
-      perUnitCost,
-    };
-
-    // Remove undefined keys so partial updates remain valid.
-    Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
+    const payload = normalizeProductPayload(req.body, true);
 
     const product = await Product.findByIdAndUpdate(req.params.id, payload, {
       new: true,
@@ -184,10 +192,35 @@ exports.updateProduct = async (req, res, next) => {
     });
 
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
-    res.json({ success: true, data: product });
+    // Return enriched product with stock data
+    const populatedProduct = await Product.findById(product._id)
+      .populate("categoryId", "name shortCode")
+      .lean();
+
+    const stock = await StockQuant.aggregate([
+      { $match: { productId: product._id } },
+      {
+        $group: {
+          _id: "$productId",
+          onHand: { $sum: "$quantity" },
+          reservedQty: { $sum: "$reservedQty" },
+        },
+      },
+    ]);
+
+    const stockData = stock[0]
+      ? { onHand: stock[0].onHand, reservedQty: stock[0].reservedQty }
+      : null;
+
+    res.json({
+      success: true,
+      data: enrichProduct(populatedProduct, stockData),
+    });
   } catch (error) {
     next(error);
   }
@@ -202,20 +235,26 @@ exports.deleteProduct = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
     // Check if product has stock
-    const hasStock = await StockQuant.findOne({ productId: product._id, quantity: { $gt: 0 } });
+    const hasStock = await StockQuant.findOne({
+      productId: product._id,
+      quantity: { $gt: 0 },
+    });
     if (hasStock) {
       return res.status(400).json({
         success: false,
-        message: 'Cannot delete product with existing stock. Adjust stock to zero first.',
+        message:
+          "Cannot delete product with existing stock. Adjust stock to zero first.",
       });
     }
 
     await product.deleteOne();
-    res.json({ success: true, message: 'Product deleted' });
+    res.json({ success: true, message: "Product deleted" });
   } catch (error) {
     next(error);
   }
@@ -230,7 +269,9 @@ exports.getProductStock = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Product not found" });
     }
 
     const stockQuant = await StockQuant.findOne({ productId: product._id }).lean();
@@ -260,7 +301,7 @@ exports.getProductStock = async (req, res, next) => {
  */
 exports.getCategories = async (req, res, next) => {
   try {
-    const categories = await ProductCategory.find().sort('name');
+    const categories = await ProductCategory.find().sort("name");
     res.json({ success: true, data: categories });
   } catch (error) {
     next(error);
@@ -288,12 +329,18 @@ exports.createCategory = async (req, res, next) => {
  */
 exports.updateCategory = async (req, res, next) => {
   try {
-    const category = await ProductCategory.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
+    const category = await ProductCategory.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
     if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Category not found" });
     }
     res.json({ success: true, data: category });
   } catch (error) {
@@ -311,9 +358,9 @@ exports.updateCategory = async (req, res, next) => {
 exports.getReorderRules = async (req, res, next) => {
   try {
     const rules = await ReorderRule.find()
-      .populate('productId', 'name sku')
-      .populate('warehouseId', 'name shortCode')
-      .sort('-createdAt');
+      .populate("productId", "name sku")
+      .populate("warehouseId", "name shortCode")
+      .sort("-createdAt");
 
     res.json({ success: true, data: rules });
   } catch (error) {
@@ -347,7 +394,9 @@ exports.updateReorderRule = async (req, res, next) => {
       runValidators: true,
     });
     if (!rule) {
-      return res.status(404).json({ success: false, message: 'Reorder rule not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Reorder rule not found" });
     }
     res.json({ success: true, data: rule });
   } catch (error) {
@@ -364,10 +413,12 @@ exports.deleteReorderRule = async (req, res, next) => {
   try {
     const rule = await ReorderRule.findById(req.params.id);
     if (!rule) {
-      return res.status(404).json({ success: false, message: 'Reorder rule not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "Reorder rule not found" });
     }
     await rule.deleteOne();
-    res.json({ success: true, message: 'Reorder rule deleted' });
+    res.json({ success: true, message: "Reorder rule deleted" });
   } catch (error) {
     next(error);
   }

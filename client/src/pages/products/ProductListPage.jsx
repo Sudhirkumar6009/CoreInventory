@@ -15,16 +15,17 @@ export default function ProductListPage() {
   const [filters, setFilters] = useState({ search: '', page: 1 })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['products', filters],
-    queryFn: () => productService.getAll({ ...filters, limit: 20 }).then((r) => {
-      const payload = r.data || {}
-      return {
-        items: payload.data || payload.products || payload.items || [],
-        totalPages: payload.pagination?.pages || payload.totalPages || 1,
-      }
-    }),
+    queryKey: ["products", filters],
+    queryFn: () =>
+      productService.getAll({ ...filters, limit: 20 }).then((r) => {
+        const payload = r.data || {};
+        return {
+          items: payload.data || payload.products || payload.items || [],
+          totalPages: payload.pagination?.pages || payload.totalPages || 1,
+        };
+      }),
     placeholderData: keepPreviousData,
-  })
+  });
 
   const columns = [
     { key: 'name', label: 'Product Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
@@ -34,19 +35,36 @@ export default function ProductListPage() {
     { key: 'freeToUse', label: 'Free To Use', render: (r) => r.freeToUse ?? ((r.onHand || 0) - (r.reservedQty || 0)) },
   ]
 
-  const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
-  const items = data?.items || []
+  const handleSearch = useCallback((search) => {
+    setFilters((f) => ({ ...f, search, page: 1 }));
+  }, []);
+  const items = data?.items || [];
 
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Products</h1>
       <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 mb-5 text-sm text-blue-700">
-        Stock quantities update automatically via Receipts, Deliveries, Transfers, and Adjustments.
+        Stock quantities update automatically via Receipts, Deliveries,
+        Transfers, and Adjustments.
       </div>
-      <FilterBar module="products" newPath="/products/new" hideNew={!isManager} onSearch={handleSearch} />
-      <Table columns={columns} data={items} loading={isLoading} emptyMessage="No products found."
-        onRowClick={(row) => navigate(`/products/${row._id || row.id}/edit`)} />
-      <Pagination page={filters.page} totalPages={data?.totalPages || 1} onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))} />
+      <FilterBar
+        module="products"
+        newPath="/products/new"
+        hideNew={!isManager}
+        onSearch={handleSearch}
+      />
+      <Table
+        columns={columns}
+        data={items}
+        loading={isLoading}
+        emptyMessage="No products found."
+        onRowClick={(row) => navigate(`/products/${row._id || row.id}/edit`)}
+      />
+      <Pagination
+        page={filters.page}
+        totalPages={data?.totalPages || 1}
+        onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))}
+      />
     </div>
-  )
+  );
 }
