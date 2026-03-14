@@ -4,6 +4,52 @@ const ProductCategory = require('../models/ProductCategory');
 const StockQuant = require('../models/StockQuant');
 const ReorderRule = require('../models/ReorderRule');
 
+const toNumberOrDefault = (value, fallback = 0) => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const normalizeProductPayload = (body = {}, isUpdate = false) => {
+  const payload = {};
+
+  if (!isUpdate || body.name !== undefined) payload.name = body.name;
+  if (!isUpdate || body.sku !== undefined) payload.sku = body.sku;
+
+  if (!isUpdate || body.categoryId !== undefined || body.category !== undefined) {
+    payload.categoryId = body.categoryId ?? body.category ?? null;
+  }
+
+  if (!isUpdate || body.uom !== undefined || body.unitOfMeasure !== undefined) {
+    payload.uom = body.uom || body.unitOfMeasure || 'units';
+  }
+
+  if (!isUpdate || body.perUnitCost !== undefined) {
+    payload.perUnitCost = toNumberOrDefault(body.perUnitCost, 0);
+  }
+
+  if (!isUpdate || body.reorderPoint !== undefined) {
+    payload.reorderPoint = toNumberOrDefault(body.reorderPoint, 0);
+  }
+
+  if (!isUpdate || body.maxStock !== undefined) {
+    payload.maxStock = toNumberOrDefault(body.maxStock, 0);
+  }
+
+  return payload;
+};
+
+const enrichProduct = (product, stockData = null) => {
+  const onHand = stockData?.onHand || 0;
+  const reservedQty = stockData?.reservedQty || 0;
+  return {
+    ...product,
+    onHand,
+    reservedQty,
+    freeToUse: onHand - reservedQty,
+  };
+};
+
 // ==================== PRODUCTS ====================
 
 /**

@@ -15,7 +15,6 @@ import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
-const STATUS_OPTIONS = ["draft", "waiting", "ready", "done", "cancelled"];
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
