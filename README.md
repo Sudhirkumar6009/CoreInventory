@@ -554,10 +554,6 @@ Planned improvements:
 
 ---
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 1c22270b8084392c6a812af658f968c91e670b50
 ## 📄 License
 
 This project is licensed under the **ISC License**.
