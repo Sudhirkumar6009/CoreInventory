@@ -30,7 +30,7 @@ export default function ProductListPage() {
   const columns = [
     { key: 'name', label: 'Product Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
     { key: 'sku', label: 'SKU', render: (r) => <span className="text-xs font-mono text-gray-500">{r.sku || r.code || '--'}</span> },
-    { key: 'perUnitCost', label: 'Per Unit Cost', render: (r) => r.perUnitCost != null ? `₹${r.perUnitCost}` : '--' },
+    { key: 'perUnitCost', label: 'Per Unit Cost', render: (r) => r.perUnitCost != null ? `₹${Number(r.perUnitCost).toFixed(2)}` : '₹0.00' },
     {
       key: 'onHand', label: 'On Hand',
       render: (r) => {

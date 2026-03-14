@@ -1,34 +1,34 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const productSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, 'Product name is required'],
+      required: [true, "Product name is required"],
       trim: true,
     },
     sku: {
       type: String,
-      required: [true, 'SKU is required'],
+      required: [true, "SKU is required"],
       unique: true,
       trim: true,
       uppercase: true,
     },
     categoryId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'ProductCategory',
+      ref: "ProductCategory",
       default: null,
     },
     uom: {
       type: String,
-      required: [true, 'Unit of measure is required'],
+      required: [true, "Unit of measure is required"],
       trim: true,
-      default: 'units',
+      default: "units",
     },
     description: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
     },
     reorderPoint: {
       type: Number,
@@ -45,15 +45,20 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    perUnitCost: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 // Text index for search
-productSchema.index({ name: 'text', sku: 'text' });
+productSchema.index({ name: "text", sku: "text" });
 
-module.exports = mongoose.model('Product', productSchema);
+module.exports = mongoose.model("Product", productSchema);
