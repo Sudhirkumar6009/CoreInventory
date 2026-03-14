@@ -9,11 +9,13 @@ import { previewRef } from "../../utils/generateReference";
 import { STATUS_OPTIONS } from "../../constants";
 import Button from "../../components/common/Button";
 import StatusStepper from "../../components/common/StatusStepper";
+import LineItemTable from "../../components/common/LineItemTable";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
 import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
+const STATUS_OPTIONS = ["draft", "waiting", "ready", "done", "cancelled"];
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
