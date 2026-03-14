@@ -2,7 +2,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Otp = require('../models/Otp');
 const generateOtp = require('../utils/generateOtp');
-const sendEmail = require('../utils/emailService');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/emailService');
 
 // Helper: generate JWT tokens
 const generateTokens = (userId) => {
@@ -52,12 +52,7 @@ exports.register = async (req, res, next) => {
     const { code, expiresAt } = generateOtp();
     await Otp.create({ userId: user._id, otpCode: code, expiresAt });
 
-    await sendEmail({
-      to: email,
-      subject: 'CoreInventory — Verify Your Account',
-      text: `Your OTP is: ${code}. It expires in 10 minutes.`,
-      html: `<h3>Your OTP is: <strong>${code}</strong></h3><p>It expires in 10 minutes.</p>`,
-    });
+    await sendVerificationEmail(email, name, code);
 
     res.status(201).json({
       success: true,
@@ -178,12 +173,12 @@ exports.sendOtp = async (req, res, next) => {
     const { code, expiresAt } = generateOtp();
     await Otp.create({ userId: user._id, otpCode: code, expiresAt });
 
-    await sendEmail({
-      to: email,
-      subject: 'CoreInventory — Your OTP Code',
-      text: `Your OTP is: ${code}. It expires in 10 minutes.`,
-      html: `<h3>Your OTP is: <strong>${code}</strong></h3><p>It expires in 10 minutes.</p>`,
-    });
+    // Determine if this is for password reset or verification
+    if (user.isActive) {
+      await sendPasswordResetEmail(email, user.name, code);
+    } else {
+      await sendVerificationEmail(email, user.name, code);
+    }
 
     res.json({ success: true, message: 'OTP sent to your email' });
   } catch (error) {
