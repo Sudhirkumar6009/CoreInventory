@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { adjustmentService } from '../../api/adjustmentService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import FilterBar from '../../components/common/FilterBar'
@@ -17,7 +17,7 @@ export default function AdjustmentListPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['adjustments', filters],
     queryFn: () => adjustmentService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const columns = [

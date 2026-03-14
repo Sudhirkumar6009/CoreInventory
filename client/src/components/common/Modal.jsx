@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { Dialog, Transition } from '@headlessui/react'
+import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 
@@ -14,17 +14,17 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog as="div" className="relative z-50" onClose={onClose}>
-        <Transition.Child
+        <TransitionChild
           as={Fragment}
           enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100"
           leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0"
         >
           <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" />
-        </Transition.Child>
+        </TransitionChild>
 
         <div className="fixed inset-0 overflow-y-auto">
           <div className="flex min-h-full items-center justify-center p-4">
-            <Transition.Child
+            <TransitionChild
               as={Fragment}
               enter="ease-out duration-200"
               enterFrom="opacity-0 scale-95"
@@ -33,16 +33,16 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
               leaveFrom="opacity-100 scale-100"
               leaveTo="opacity-0 scale-95"
             >
-              <Dialog.Panel
+              <DialogPanel
                 className={clsx(
                   'w-full rounded-2xl bg-white p-6 shadow-2xl transition-all',
                   sizeMap[size]
                 )}
               >
                 <div className="flex items-center justify-between mb-4">
-                  <Dialog.Title className="text-lg font-semibold text-gray-900">
+                  <DialogTitle className="text-lg font-semibold text-gray-900">
                     {title}
-                  </Dialog.Title>
+                  </DialogTitle>
                   <button
                     onClick={onClose}
                     className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
@@ -51,8 +51,8 @@ export default function Modal({ isOpen, onClose, title, children, size = 'md' })
                   </button>
                 </div>
                 {children}
-              </Dialog.Panel>
-            </Transition.Child>
+              </DialogPanel>
+            </TransitionChild>
           </div>
         </div>
       </Dialog>

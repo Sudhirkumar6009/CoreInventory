@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { deliveryService } from '../../api/deliveryService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import FilterBar from '../../components/common/FilterBar'
@@ -18,7 +18,7 @@ export default function DeliveryListPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['deliveries', filters],
     queryFn: () => deliveryService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const columns = [

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { productService } from '../../api/productService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import FilterBar from '../../components/common/FilterBar'
@@ -18,7 +18,7 @@ export default function ProductListPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['products', filters],
     queryFn: () => productService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const columns = [

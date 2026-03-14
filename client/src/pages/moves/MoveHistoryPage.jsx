@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { moveService } from '../../api/moveService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import FilterBar from '../../components/common/FilterBar'
@@ -18,7 +18,7 @@ export default function MoveHistoryPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['moves', filters],
     queryFn: () => moveService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const columns = [

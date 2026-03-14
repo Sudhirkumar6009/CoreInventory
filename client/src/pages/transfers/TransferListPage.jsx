@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { transferService } from '../../api/transferService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import FilterBar from '../../components/common/FilterBar'
@@ -17,7 +17,7 @@ export default function TransferListPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['transfers', filters],
     queryFn: () => transferService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
-    keepPreviousData: true,
+    placeholderData: keepPreviousData,
   })
 
   const columns = [
