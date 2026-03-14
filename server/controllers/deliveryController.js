@@ -54,9 +54,17 @@ exports.getDeliveries = async (req, res, next) => {
  */
 exports.createDelivery = async (req, res, next) => {
   try {
-    const { supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
 
-    const reference = await generateReference('OUT');
+    let reference = incomingRef?.trim();
+    if (reference) {
+      const exists = await StockPicking.exists({ reference });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+    } else {
+      reference = await generateReference('OUT');
+    }
 
     const delivery = await StockPicking.create({
       reference,
@@ -143,7 +151,15 @@ exports.updateDelivery = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Cannot edit a ${delivery.status} delivery` });
     }
 
-    const { supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+
+    if (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) {
+      const exists = await StockPicking.exists({ reference: incomingRef.trim() });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+      delivery.reference = incomingRef.trim();
+    }
 
     if (supplierOrCustomer !== undefined) delivery.supplierOrCustomer = supplierOrCustomer;
     if (scheduledDate !== undefined) delivery.scheduledDate = scheduledDate;
