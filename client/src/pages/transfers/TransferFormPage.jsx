@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { transferService } from "../../api/transferService";
 import { warehouseService } from "../../api/warehouseService";
+import { STATUS_OPTIONS } from "../../constants";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { previewRef } from "../../utils/generateReference";
 import Button from "../../components/common/Button";
@@ -14,6 +15,7 @@ import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
+const STATUS_ASC_ORDER = ["draft", "waiting", "ready", "done", "cancelled"];
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
@@ -41,7 +43,7 @@ export default function TransferFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isNew = id === "new";
+  const isNew = !id || id === "new" || id === "undefined";
 
   useDocumentTitle(isNew ? "New Transfer" : `Transfer ${id}`);
 
@@ -77,22 +79,27 @@ export default function TransferFormPage() {
 
   useEffect(() => {
     if (transfer) {
+      const rawLines =
+        transfer.moveLines || transfer.lines || transfer.items || [];
+      const firstLine = rawLines[0] || {};
       reset({
         reference: transfer.reference,
         sourceLocation:
-          transfer.sourceLocation?._id || transfer.sourceLocation || "",
+          transfer.sourceLocation?._id ||
+          transfer.sourceLocation ||
+          firstLine.fromLocationId?._id ||
+          firstLine.fromLocationId ||
+          "",
         destinationLocation:
           transfer.destinationLocation?._id ||
           transfer.destinationLocation ||
+          firstLine.toLocationId?._id ||
+          firstLine.toLocationId ||
           "",
         scheduledDate: transfer.scheduledDate?.split("T")[0],
         notes: transfer.notes || "",
       });
-      setLines(
-        normalizeLines(
-          transfer.moveLines || transfer.lines || transfer.items || [],
-        ),
-      );
+      setLines(normalizeLines(rawLines));
       setStatus(transfer.status || "draft");
     } else if (isNew) {
       reset({
@@ -114,10 +121,12 @@ export default function TransferFormPage() {
       queryClient.invalidateQueries({ queryKey: ["transfers"] });
       toast.success("Transfer saved");
       const created = res.data?.data || res.data;
-      if (isNew)
-        navigate(`/operations/transfers/${created?._id || created?.id}`, {
+      const newId = created?._id || created?.id;
+      if (isNew && newId) {
+        navigate(`/operations/transfers/${newId}`, {
           replace: true,
         });
+      }
     },
     onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
@@ -187,7 +196,7 @@ export default function TransferFormPage() {
     saveMutation.mutate({
       ...formData,
       moveLines,
-      status: "draft",
+      status,
     });
   };
 
@@ -206,6 +215,10 @@ export default function TransferFormPage() {
     label: `${l.name}${l.shortCode ? ` (${l.shortCode})` : ""}`,
   }));
 
+  const orderedStatusOptions = [...STATUS_OPTIONS].sort(
+    (a, b) => STATUS_ASC_ORDER.indexOf(a) - STATUS_ASC_ORDER.indexOf(b),
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -213,7 +226,7 @@ export default function TransferFormPage() {
           {isNew ? "New Transfer" : transfer?.reference || "Transfer"}
         </h1>
         <div className="flex items-center gap-3">
-          {status === "draft" && (
+          {isNew && (
             <>
               <Button
                 variant="secondary"
@@ -230,7 +243,24 @@ export default function TransferFormPage() {
               </Button>
             </>
           )}
-          {(status === "waiting" || status === "ready") && (
+          {!isNew && status === "draft" && (
+            <>
+              <Button
+                variant="secondary"
+                onClick={() => navigate("/operations/transfers")}
+              >
+                Discard
+              </Button>
+              <Button
+                onClick={handleSubmit(onSave)}
+                loading={saveMutation.isPending}
+                disabled={!!sameLocation}
+              >
+                Save
+              </Button>
+            </>
+          )}
+          {!isNew && (status === "waiting" || status === "ready") && (
             <>
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
                 Cancel
@@ -243,7 +273,7 @@ export default function TransferFormPage() {
               </Button>
             </>
           )}
-          {(status === "done" || status === "cancelled") && (
+          {!isNew && (status === "done" || status === "cancelled") && (
             <Button
               variant="secondary"
               onClick={() => navigate("/operations/transfers")}
@@ -290,6 +320,24 @@ export default function TransferFormPage() {
               className="input-field"
               disabled={isReadOnly}
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Status
+            </label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="input-field"
+              disabled={isReadOnly}
+            >
+              {orderedStatusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

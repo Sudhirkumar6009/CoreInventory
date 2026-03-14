@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const stockPickingSchema = new mongoose.Schema(
   {
@@ -10,13 +10,23 @@ const stockPickingSchema = new mongoose.Schema(
     },
     pickingType: {
       type: String,
-      enum: ['IN', 'OUT', 'INTERNAL'],
+      enum: ["IN", "OUT", "INTERNAL"],
       required: true,
     },
     supplierOrCustomer: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
+    },
+    sourceLocation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+      default: null,
+    },
+    destinationLocation: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Location",
+      default: null,
     },
     scheduledDate: {
       type: Date,
@@ -24,17 +34,17 @@ const stockPickingSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'waiting', 'ready', 'done', 'cancelled'],
-      default: 'draft',
+      enum: ["draft", "waiting", "ready", "done", "cancelled"],
+      default: "draft",
     },
     notes: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: "User",
       required: true,
     },
   },
@@ -42,15 +52,15 @@ const stockPickingSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 // Virtual: populate move lines for this picking
-stockPickingSchema.virtual('moveLines', {
-  ref: 'StockMoveLine',
-  localField: '_id',
-  foreignField: 'pickingId',
+stockPickingSchema.virtual("moveLines", {
+  ref: "StockMoveLine",
+  localField: "_id",
+  foreignField: "pickingId",
   justOne: false,
 });
 
-module.exports = mongoose.model('StockPicking', stockPickingSchema);
+module.exports = mongoose.model("StockPicking", stockPickingSchema);
