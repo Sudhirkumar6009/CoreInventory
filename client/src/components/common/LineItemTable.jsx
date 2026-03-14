@@ -40,6 +40,12 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
     )
   }
 
+  const updateLineFields = (id, patch) => {
+    onChange(
+      lines.map((l, idx) => (getLineId(l, idx) === id ? { ...l, ...patch } : l))
+    )
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="overflow-x-auto">
@@ -63,6 +69,7 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
                 line={line}
                 readOnly={readOnly}
                 onUpdate={updateLine}
+                onUpdateFields={updateLineFields}
                 onRemove={removeLine}
               />
               )
@@ -83,7 +90,7 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
   )
 }
 
-function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
+function LineRow({ lineId, line, readOnly, onUpdate, onUpdateFields, onRemove }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -111,9 +118,11 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
   }, [debounced, selectedProductName])
 
   const selectProduct = (product) => {
-    onUpdate(lineId, 'productId', product._id || product.id)
-    onUpdate(lineId, 'productName', product.name)
-    onUpdate(lineId, 'uom', product.uom || product.unitOfMeasure || 'units')
+    onUpdateFields(lineId, {
+      productId: product._id || product.id,
+      productName: product.name,
+      uom: product.uom || product.unitOfMeasure || 'units',
+    })
     setSearchTerm(product.name)
     setShowDropdown(false)
   }
@@ -121,8 +130,7 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
   const onSearchChange = (value) => {
     setSearchTerm(value)
     if (selectedProductId && value !== selectedProductName) {
-      onUpdate(lineId, 'productId', '')
-      onUpdate(lineId, 'productName', '')
+      onUpdateFields(lineId, { productId: '', productName: '' })
     }
   }
 
@@ -130,8 +138,7 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
     setSearchTerm('')
     setResults([])
     setShowDropdown(false)
-    onUpdate(lineId, 'productId', '')
-    onUpdate(lineId, 'productName', '')
+    onUpdateFields(lineId, { productId: '', productName: '' })
   }
 
   return (
