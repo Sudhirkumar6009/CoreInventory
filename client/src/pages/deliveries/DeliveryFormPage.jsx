@@ -14,6 +14,15 @@ import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
+const ALLOWED_STATUS = ["draft", "waiting", "ready", "done", "cancelled"];
+
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value.split("T")[0] || "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().split("T")[0] || "";
+};
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
@@ -53,7 +62,12 @@ export default function DeliveryFormPage() {
   const [status, setStatus] = useState("draft");
   const [showCancel, setShowCancel] = useState(false);
 
-  const { data: delivery, isLoading: fetchLoading } = useQuery({
+  const {
+    data: delivery,
+    isLoading: fetchLoading,
+    isError: fetchError,
+    error: fetchErrorDetails,
+  } = useQuery({
     queryKey: ["delivery", id],
     queryFn: () =>
       deliveryService.getById(id).then((r) => r.data?.data || r.data),
@@ -62,19 +76,30 @@ export default function DeliveryFormPage() {
 
   useEffect(() => {
     if (delivery) {
+      const nextStatus = ALLOWED_STATUS.includes(delivery.status)
+        ? delivery.status
+        : "draft";
       reset({
         reference: delivery.reference,
-        scheduledDate: delivery.scheduledDate?.split("T")[0],
+        scheduledDate: toDateInputValue(delivery.scheduledDate),
         carrier: delivery.carrier,
       });
       setLines(
         normalizeLines(
-          delivery.moveLines || delivery.lines || delivery.items || [],
+          Array.isArray(delivery.moveLines)
+            ? delivery.moveLines
+            : Array.isArray(delivery.lines)
+              ? delivery.lines
+              : Array.isArray(delivery.items)
+                ? delivery.items
+                : [],
         ),
       );
-      setStatus(delivery.status || "draft");
+      setStatus(nextStatus);
     } else if (isNew) {
       reset({ reference: previewRef("OUT"), scheduledDate: "", carrier: "" });
+      setLines([]);
+      setStatus("draft");
     }
   }, [delivery, isNew, reset]);
 
@@ -179,6 +204,14 @@ export default function DeliveryFormPage() {
         <Spinner size="lg" />
       </div>
     );
+
+  if (fetchError && !isNew) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        Failed to load delivery details. {fetchErrorDetails?.response?.data?.message || fetchErrorDetails?.message || "Please retry."}
+      </div>
+    );
+  }
 
   return (
     <div>
