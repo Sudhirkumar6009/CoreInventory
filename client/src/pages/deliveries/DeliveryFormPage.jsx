@@ -14,7 +14,6 @@ import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
-const STATUS_OPTIONS = ["draft", "waiting", "ready", "done", "cancelled"];
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
@@ -92,6 +91,7 @@ export default function DeliveryFormPage() {
       queryClient.invalidateQueries({ queryKey: ["deliveries"] });
       toast.success("Delivery saved");
       const created = res.data?.data || res.data;
+      if (created?.status) setStatus(created.status);
       const newId = created?._id || created?.id || id;
       if (isNew) navigate(`/operations/deliveries/${newId}`, { replace: true });
     },
@@ -204,6 +204,14 @@ export default function DeliveryFormPage() {
               </Button>
             </>
           )}
+          {status !== "draft" && isManager && (
+            <Button
+              onClick={handleSubmit(onSave)}
+              loading={saveMutation.isPending}
+            >
+              Save
+            </Button>
+          )}
           {(status === "waiting" || status === "ready") && (
             <>
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
@@ -261,22 +269,6 @@ export default function DeliveryFormPage() {
             {errors.reference && (
               <p className="text-xs text-red-500 mt-1">
                 {errors.reference.message}
-              </p>
-            )}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Customer *
-            </label>
-            <input
-              {...register("customer", { required: "Customer is required" })}
-              className="input-field"
-              placeholder="Customer / recipient name"
-              disabled={isReadOnly}
-            />
-            {errors.customer && (
-              <p className="text-xs text-red-500 mt-1">
-                {errors.customer.message}
               </p>
             )}
           </div>

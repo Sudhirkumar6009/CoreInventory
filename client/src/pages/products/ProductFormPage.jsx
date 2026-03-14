@@ -68,8 +68,17 @@ export default function ProductFormPage() {
         uom: product.uom || "units",
         perUnitCost: product.perUnitCost ?? 0,
       });
+    } else if (isNew) {
+      reset({
+        name: "",
+        sku: "",
+        categoryId: "",
+        uom: "units",
+        perUnitCost: 0,
+        initialStock: 0,
+      });
     }
-  }, [product, reset]);
+  }, [product, isNew, reset]);
 
   const onSubmit = (data) => {
     const payload = {

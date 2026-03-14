@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { receiptService } from "../../api/receiptService";
 import { useAuthStore } from "../../store/authStore";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
+import { useRole } from "../../hooks/useRole";
 import { previewRef } from "../../utils/generateReference";
 import Button from "../../components/common/Button";
 import StatusStepper from "../../components/common/StatusStepper";
@@ -14,6 +15,7 @@ import Spinner from "../../components/common/Spinner";
 import toast from "react-hot-toast";
 
 const STEPS = ["Draft", "Waiting", "Ready", "Done"];
+const STATUS_OPTIONS = ["draft", "waiting", "ready", "done", "cancelled"];
 
 const getLineProductId = (line) => {
   const raw = line?.productId || line?.product;
@@ -28,7 +30,6 @@ const normalizeLines = (rawLines = []) => {
     productId: getLineProductId(line),
     productName:
       line.productName || line.productId?.name || line.product?.name || "",
-    description: line.description || "",
     qty: Number(line.qty ?? line.qtyOrdered ?? 0),
     qtyDone: Number(line.qtyDone ?? 0),
     uom: line.uom || line.productId?.uom || line.product?.uom || "units",
@@ -41,6 +42,7 @@ export default function ReceiptFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
+  const { isManager } = useRole();
   const isNew = !id || id === "new" || id === "undefined";
 
   useDocumentTitle(isNew ? "New Receipt" : `Receipt ${id}`);
@@ -93,6 +95,7 @@ export default function ReceiptFormPage() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       toast.success("Receipt saved");
       const created = res.data?.data || res.data;
+      if (created?.status) setStatus(created.status);
       const newId = created?._id || created?.id || id;
       if (isNew && newId)
         navigate(`/operations/receipts/${newId}`, { replace: true });
@@ -144,7 +147,6 @@ export default function ReceiptFormPage() {
       const qtyOrdered = Number(line.qty || line.qtyOrdered || 0);
       const hasAnyData =
         !!productId ||
-        !!line.description ||
         qtyOrdered > 0 ||
         Number(line.qtyDone || 0) > 0 ||
         !!line.toLocationId;
@@ -162,7 +164,6 @@ export default function ReceiptFormPage() {
     const moveLines = (lines || [])
       .map((line) => ({
         productId: getLineProductId(line),
-        description: line.description || "",
         qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
         qtyDone: Number(line.qtyDone || 0),
         uom: line.uom || "units",
@@ -210,6 +211,14 @@ export default function ReceiptFormPage() {
                 Save
               </Button>
             </>
+          )}
+          {status !== "draft" && isManager && (
+            <Button
+              onClick={handleSubmit(onSave)}
+              loading={saveMutation.isPending}
+            >
+              Save
+            </Button>
           )}
           {(status === "waiting" || status === "ready") && (
             <>

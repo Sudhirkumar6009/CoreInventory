@@ -42,6 +42,14 @@ const stockPickingSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    isReturned: {
+      type: Boolean,
+      default: false,
+    },
+    returnedAt: {
+      type: Date,
+      default: null,
+    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

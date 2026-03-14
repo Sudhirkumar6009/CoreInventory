@@ -37,7 +37,7 @@ const stockAdjustmentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'done', 'cancelled'],
+      enum: ['draft', 'waiting', 'ready', 'done', 'cancelled'],
       default: 'draft',
     },
     createdBy: {
