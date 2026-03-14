@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Bars3Icon, BellIcon, MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
+import { Bars3Icon, MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useUiStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
 import { useRole } from '../../hooks/useRole'
@@ -123,7 +123,7 @@ export default function TopNav() {
             ))}
           </div>
 
-          {/* Right: Role badge, Search, Bell, Avatar */}
+          {/* Right: Role badge, Search, Avatar */}
           <div className="flex items-center gap-2">
             {/* Role indicator badge */}
             <span className={clsx(
@@ -137,10 +137,6 @@ export default function TopNav() {
 
             <button className="p-2 rounded-lg hover:bg-white/10 transition-colors">
               <MagnifyingGlassIcon className="w-5 h-5" />
-            </button>
-            <button className="p-2 rounded-lg hover:bg-white/10 transition-colors relative">
-              <BellIcon className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-brand-accent rounded-full" />
             </button>
             <div className="relative">
               <button
