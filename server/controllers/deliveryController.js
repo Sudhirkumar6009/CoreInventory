@@ -5,6 +5,107 @@ const StockMove = require('../models/StockMove');
 const StockQuant = require('../models/StockQuant');
 const generateReference = require('../utils/generateReference');
 
+const getLineQuantity = (line) => {
+  const qtyDone = Number(line?.qtyDone || 0);
+  const qtyOrdered = Number(line?.qtyOrdered || 0);
+  return qtyDone > 0 ? qtyDone : qtyOrdered;
+};
+
+const aggregateQtyByProduct = (moveLines = []) => {
+  const qtyByProduct = new Map();
+  for (const line of moveLines) {
+    const qty = getLineQuantity(line);
+    const productId = line.productId?.toString();
+    if (!productId || qty <= 0) continue;
+    qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qty);
+  }
+  return qtyByProduct;
+};
+
+const reserveStockForLines = async (session, moveLines) => {
+  const qtyByProduct = aggregateQtyByProduct(moveLines);
+
+  for (const [productId, reserveQty] of qtyByProduct.entries()) {
+    const quant = await StockQuant.findOne({ productId }).session(session);
+    const availableQty = quant ? quant.quantity - quant.reservedQty : 0;
+
+    if (availableQty < reserveQty) {
+      throw new Error(`Insufficient stock to reserve. Available: ${availableQty}, Required: ${reserveQty}`);
+    }
+  }
+
+  const ops = Array.from(qtyByProduct.entries()).map(([productId, reserveQty]) => ({
+    updateOne: {
+      filter: { productId },
+      update: { $inc: { reservedQty: reserveQty } },
+      upsert: true,
+    },
+  }));
+
+  if (ops.length > 0) {
+    await StockQuant.bulkWrite(ops, { session });
+  }
+};
+
+const unreserveStockForLines = async (session, moveLines) => {
+  const qtyByProduct = aggregateQtyByProduct(moveLines);
+
+  for (const [productId, unreserveQty] of qtyByProduct.entries()) {
+    const quant = await StockQuant.findOne({ productId }).session(session);
+    const reservedQty = quant ? quant.reservedQty : 0;
+
+    if (reservedQty < unreserveQty) {
+      throw new Error(`Cannot release reservation. Reserved: ${reservedQty}, Required: ${unreserveQty}`);
+    }
+  }
+
+  const ops = Array.from(qtyByProduct.entries()).map(([productId, unreserveQty]) => ({
+    updateOne: {
+      filter: { productId },
+      update: { $inc: { reservedQty: -unreserveQty } },
+    },
+  }));
+
+  if (ops.length > 0) {
+    await StockQuant.bulkWrite(ops, { session });
+  }
+};
+
+const consumeStockForLines = async (session, moveLines, fromReserved = false) => {
+  const qtyByProduct = aggregateQtyByProduct(moveLines);
+
+  for (const [productId, consumeQty] of qtyByProduct.entries()) {
+    const quant = await StockQuant.findOne({ productId }).session(session);
+    const quantity = quant ? quant.quantity : 0;
+    const reservedQty = quant ? quant.reservedQty : 0;
+    const availableQty = quantity - reservedQty;
+
+    if (fromReserved) {
+      if (reservedQty < consumeQty || quantity < consumeQty) {
+        throw new Error(`Insufficient reserved stock. Reserved: ${reservedQty}, Quantity: ${quantity}, Required: ${consumeQty}`);
+      }
+      continue;
+    }
+
+    if (availableQty < consumeQty) {
+      throw new Error(`Insufficient stock. Available: ${availableQty}, Required: ${consumeQty}`);
+    }
+  }
+
+  const ops = Array.from(qtyByProduct.entries()).map(([productId, consumeQty]) => ({
+    updateOne: {
+      filter: { productId },
+      update: fromReserved
+        ? { $inc: { quantity: -consumeQty, reservedQty: -consumeQty } }
+        : { $inc: { quantity: -consumeQty } },
+    },
+  }));
+
+  if (ops.length > 0) {
+    await StockQuant.bulkWrite(ops, { session });
+  }
+};
+
 /**
  * @desc    Get all deliveries
  * @route   GET /api/deliveries
@@ -58,6 +159,7 @@ exports.createDelivery = async (req, res, next) => {
     const { reference: incomingRef, scheduledDate, notes, moveLines, status: requestedStatus } = req.body;
     const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
     const initialStatus = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'draft';
+    const shouldReserve = initialStatus === 'ready';
     const shouldAutoPost = initialStatus === 'done';
 
     if (initialStatus !== 'draft' && req.user?.role !== 'manager') {
@@ -99,6 +201,7 @@ exports.createDelivery = async (req, res, next) => {
           scheduledDate,
           notes,
           status: initialStatus,
+          isReturned: false,
           createdBy: req.user._id,
         },
       ],
@@ -119,42 +222,32 @@ exports.createDelivery = async (req, res, next) => {
       createdLines = await StockMoveLine.insertMany(lines, { session });
     }
 
-    // Auto-post newly created delivery quantities to stock for consistency.
+    if (createdLines.length > 0 && shouldReserve) {
+      try {
+        await reserveStockForLines(session, createdLines);
+      } catch (e) {
+        await session.abortTransaction();
+        return res.status(400).json({ success: false, message: e.message });
+      }
+
+      await StockMoveLine.updateMany(
+        { pickingId: delivery._id },
+        { status: 'ready' },
+        { session }
+      );
+    }
+
+    // Auto-post newly created delivery quantities to stock when directly created as done.
     if (createdLines.length > 0 && shouldAutoPost) {
-      const qtyByProduct = new Map();
-
-      for (const line of createdLines) {
-        const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
-        const productId = line.productId.toString();
-        qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qtyToDeliver);
-      }
-
-      for (const [productId, requiredQty] of qtyByProduct.entries()) {
-        const quant = await StockQuant.findOne({ productId }).session(session);
-        const availableQty = quant ? quant.quantity - quant.reservedQty : 0;
-
-        if (availableQty < requiredQty) {
-          await session.abortTransaction();
-          return res.status(400).json({
-            success: false,
-            message: `Insufficient stock for product. Available: ${availableQty}, Required: ${requiredQty}`,
-          });
-        }
-      }
-
-      const quantOps = Array.from(qtyByProduct.entries()).map(([productId, quantity]) => ({
-        updateOne: {
-          filter: { productId },
-          update: { $inc: { quantity: -quantity } },
-        },
-      }));
-
-      if (quantOps.length > 0) {
-        await StockQuant.bulkWrite(quantOps, { session });
+      try {
+        await consumeStockForLines(session, createdLines, false);
+      } catch (e) {
+        await session.abortTransaction();
+        return res.status(400).json({ success: false, message: e.message });
       }
 
       for (const line of createdLines) {
-        const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+        const qtyToDeliver = getLineQuantity(line);
 
         line.qtyDone = qtyToDeliver;
         line.status = 'done';
@@ -233,22 +326,50 @@ exports.getDelivery = async (req, res, next) => {
  * @access  Private
  */
 exports.updateDelivery = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    const delivery = await StockPicking.findOne({ _id: req.params.id, pickingType: 'OUT' });
+    const delivery = await StockPicking.findOne({ _id: req.params.id, pickingType: 'OUT' }).session(session);
 
     if (!delivery) {
+      await session.abortTransaction();
       return res.status(404).json({ success: false, message: 'Delivery not found' });
     }
 
-    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
+    if (delivery.isReturned) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Return already processed. Delivery is immutable' });
+    }
 
-    const statusChanged = !!status && status !== delivery.status;
+    if (delivery.isReturned) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Returned delivery is immutable' });
+    }
+
+    if (delivery.isReturned) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Returned delivery is immutable' });
+    }
+
+    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
+    const previousStatus = delivery.status;
+    const nextStatus = status || previousStatus;
+    const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
+
+    if (!allowedStatuses.includes(nextStatus)) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Invalid status value' });
+    }
+
+    const statusChanged = nextStatus !== previousStatus;
 
     if (statusChanged && req.user?.role !== 'manager') {
+      await session.abortTransaction();
       return res.status(403).json({ success: false, message: 'Only managers can change status' });
     }
 
-    if (['done', 'cancelled'].includes(delivery.status)) {
+    if (['done', 'cancelled'].includes(previousStatus)) {
       const hasNonStatusChange =
         (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) ||
         scheduledDate !== undefined ||
@@ -256,8 +377,14 @@ exports.updateDelivery = async (req, res, next) => {
         (Array.isArray(moveLines) && moveLines.length > 0);
 
       if (hasNonStatusChange) {
+        await session.abortTransaction();
         return res.status(400).json({ success: false, message: `Cannot edit a ${delivery.status} delivery` });
       }
+    }
+
+    if (previousStatus === 'ready' && Array.isArray(moveLines) && moveLines.length > 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'Move status back to draft/waiting before editing reserved lines' });
     }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
@@ -267,6 +394,7 @@ exports.updateDelivery = async (req, res, next) => {
       });
 
       if (hasInvalidLine) {
+        await session.abortTransaction();
         return res.status(400).json({
           success: false,
           message: 'Each move line must include a valid product and quantity greater than zero',
@@ -275,8 +403,9 @@ exports.updateDelivery = async (req, res, next) => {
     }
 
     if (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) {
-      const exists = await StockPicking.exists({ reference: incomingRef.trim() });
+      const exists = await StockPicking.exists({ reference: incomingRef.trim() }).session(session);
       if (exists) {
+        await session.abortTransaction();
         return res.status(400).json({ success: false, message: 'Reference already exists' });
       }
       delivery.reference = incomingRef.trim();
@@ -284,12 +413,12 @@ exports.updateDelivery = async (req, res, next) => {
 
     if (scheduledDate !== undefined) delivery.scheduledDate = scheduledDate;
     if (notes !== undefined) delivery.notes = notes;
-    if (status) delivery.status = status;
+    delivery.status = nextStatus;
 
-    await delivery.save();
+    await delivery.save({ session });
 
     if (moveLines && moveLines.length > 0) {
-      await StockMoveLine.deleteMany({ pickingId: delivery._id });
+      await StockMoveLine.deleteMany({ pickingId: delivery._id }).session(session);
       const lines = moveLines.map((line) => ({
         pickingId: delivery._id,
         productId: line.productId,
@@ -297,10 +426,73 @@ exports.updateDelivery = async (req, res, next) => {
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
         fromLocationId: line.fromLocationId,
-        status: delivery.status,
+        status: nextStatus,
       }));
-      await StockMoveLine.insertMany(lines);
+      await StockMoveLine.insertMany(lines, { session });
     }
+
+    const persistedLines = await StockMoveLine.find({ pickingId: delivery._id }).session(session);
+
+    if (statusChanged) {
+      if (nextStatus === 'ready' && previousStatus !== 'ready') {
+        try {
+          await reserveStockForLines(session, persistedLines);
+        } catch (e) {
+          await session.abortTransaction();
+          return res.status(400).json({ success: false, message: e.message });
+        }
+      }
+
+      if (nextStatus === 'done') {
+        try {
+          await consumeStockForLines(session, persistedLines, previousStatus === 'ready');
+        } catch (e) {
+          await session.abortTransaction();
+          return res.status(400).json({ success: false, message: e.message });
+        }
+
+        for (const line of persistedLines) {
+          const qtyToDeliver = getLineQuantity(line);
+          line.qtyDone = qtyToDeliver;
+          line.status = 'done';
+          await line.save({ session });
+
+          await StockMove.create(
+            [
+              {
+                reference: delivery.reference,
+                pickingId: delivery._id,
+                productId: line.productId,
+                fromLocationId: line.fromLocationId,
+                quantity: qtyToDeliver,
+                uom: line.uom,
+                moveType: 'OUT',
+                status: 'done',
+                createdBy: req.user._id,
+              },
+            ],
+            { session }
+          );
+        }
+      } else {
+        if (previousStatus === 'ready') {
+          try {
+            await unreserveStockForLines(session, persistedLines);
+          } catch (e) {
+            await session.abortTransaction();
+            return res.status(400).json({ success: false, message: e.message });
+          }
+        }
+
+        await StockMoveLine.updateMany(
+          { pickingId: delivery._id },
+          { status: nextStatus, ...(nextStatus !== 'done' ? { qtyDone: 0 } : {}) },
+          { session }
+        );
+      }
+    }
+
+    await session.commitTransaction();
 
     const updatedDelivery = await StockPicking.findById(delivery._id)
       .populate('createdBy', 'name email')
@@ -314,7 +506,10 @@ exports.updateDelivery = async (req, res, next) => {
 
     res.json({ success: true, data: updatedDelivery });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -352,34 +547,16 @@ exports.validateDelivery = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Delivery has no product lines' });
     }
 
-    // Check availability for all lines first
-    for (const line of moveLines) {
-      const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
-
-      const stockQuant = await StockQuant.findOne({
-        productId: line.productId,
-      }).session(session);
-
-      const availableQty = stockQuant ? stockQuant.quantity - stockQuant.reservedQty : 0;
-
-      if (availableQty < qtyToDeliver) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock for product at source location. Available: ${availableQty}, Required: ${qtyToDeliver}`,
-        });
-      }
+    try {
+      await consumeStockForLines(session, moveLines, delivery.status === 'ready');
+    } catch (e) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: e.message });
     }
 
-    // Process each move line — decrease stock at source location
+    // Process each move line — finalize and emit stock move records
     for (const line of moveLines) {
-      const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
-
-      await StockQuant.findOneAndUpdate(
-        { productId: line.productId },
-        { $inc: { quantity: -qtyToDeliver } },
-        { session }
-      );
+      const qtyToDeliver = getLineQuantity(line);
 
       await StockMove.create(
         [
@@ -518,6 +695,11 @@ exports.returnDelivery = async (req, res, next) => {
         { session }
       );
     }
+
+    delivery.isReturned = true;
+    delivery.returnedAt = new Date();
+    delivery.status = 'cancelled';
+    await delivery.save({ session });
 
     await session.commitTransaction();
     res.json({ success: true, message: 'Delivery returned successfully', data: { returnReference: returnRef } });
