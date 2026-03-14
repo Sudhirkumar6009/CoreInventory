@@ -6,6 +6,7 @@ import { transferService } from "../../api/transferService";
 import { warehouseService } from "../../api/warehouseService";
 import { STATUS_OPTIONS } from "../../constants";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
+import { useRole } from "../../hooks/useRole";
 import { previewRef } from "../../utils/generateReference";
 import Button from "../../components/common/Button";
 import StatusStepper from "../../components/common/StatusStepper";
@@ -44,6 +45,7 @@ export default function TransferFormPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isNew = !id || id === "new" || id === "undefined";
+  const { isManager, isStaff } = useRole();
 
   useDocumentTitle(isNew ? "New Transfer" : `Transfer ${id}`);
 
@@ -61,6 +63,17 @@ export default function TransferFormPage() {
   const srcLoc = watch("sourceLocation");
   const destLoc = watch("destinationLocation");
   const sameLocation = srcLoc && destLoc && srcLoc === destLoc;
+  const sourceLocationObj = locations.find(
+    (loc) => String(loc._id || loc.id) === String(srcLoc),
+  );
+  const destinationLocationObj = locations.find(
+    (loc) => String(loc._id || loc.id) === String(destLoc),
+  );
+  const crossWarehouse =
+    !!sourceLocationObj &&
+    !!destinationLocationObj &&
+    String(sourceLocationObj.warehouseId?._id || sourceLocationObj.warehouseId) !==
+      String(destinationLocationObj.warehouseId?._id || destinationLocationObj.warehouseId);
 
   const { data: locations = [] } = useQuery({
     queryKey: ["locations"],
@@ -162,6 +175,11 @@ export default function TransferFormPage() {
       return;
     }
 
+    if (isStaff && crossWarehouse) {
+      toast.error("Staff transfers must stay inside the same warehouse.");
+      return;
+    }
+
     const hasPartialLines = (lines || []).some((line) => {
       const productId = getLineProductId(line);
       const qtyOrdered = Number(line.qty || line.qtyOrdered || 0);
@@ -196,7 +214,7 @@ export default function TransferFormPage() {
     saveMutation.mutate({
       ...formData,
       moveLines,
-      status,
+      ...(isManager ? { status } : {}),
     });
   };
 
@@ -260,7 +278,7 @@ export default function TransferFormPage() {
               </Button>
             </>
           )}
-          {!isNew && (status === "waiting" || status === "ready") && (
+          {!isNew && isManager && (status === "waiting" || status === "ready") && (
             <>
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
                 Cancel
@@ -284,12 +302,14 @@ export default function TransferFormPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-        <StatusStepper
-          steps={STEPS}
-          current={status?.charAt(0).toUpperCase() + status?.slice(1)}
-        />
-      </div>
+      {isManager && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+          <StatusStepper
+            steps={STEPS}
+            current={status?.charAt(0).toUpperCase() + status?.slice(1)}
+          />
+        </div>
+      )}
 
       <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -322,23 +342,25 @@ export default function TransferFormPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Status
-            </label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="input-field"
-              disabled={isReadOnly}
-            >
-              {orderedStatusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </select>
-          </div>
+          {isManager && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Status
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="input-field"
+                disabled={isReadOnly}
+              >
+                {orderedStatusOptions.map((s) => (
+                  <option key={s} value={s}>
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -393,6 +415,11 @@ export default function TransferFormPage() {
                 Source and destination cannot be the same location.
               </p>
             )}
+            {isStaff && crossWarehouse && (
+              <p className="text-xs text-red-500 mt-1">
+                Staff can transfer only within the same warehouse.
+              </p>
+            )}
           </div>
 
           <div className="md:col-span-2">
@@ -419,6 +446,11 @@ export default function TransferFormPage() {
           <strong>Source Location to Destination Location</strong> selected
           above.
         </div>
+        {isStaff && (
+          <div className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-3">
+            Staff transfer mode: this move is completed immediately after save.
+          </div>
+        )}
         <LineItemTable
           lines={lines}
           onChange={setLines}
@@ -426,14 +458,16 @@ export default function TransferFormPage() {
         />
       </div>
 
-      <ConfirmDialog
-        isOpen={showCancel}
-        onClose={() => setShowCancel(false)}
-        onConfirm={() => cancelMutation.mutate()}
-        title="Cancel Transfer"
-        message="Are you sure you want to cancel this transfer? This action cannot be undone."
-        confirmLabel="Cancel Transfer"
-      />
+      {isManager && (
+        <ConfirmDialog
+          isOpen={showCancel}
+          onClose={() => setShowCancel(false)}
+          onConfirm={() => cancelMutation.mutate()}
+          title="Cancel Transfer"
+          message="Are you sure you want to cancel this transfer? This action cannot be undone."
+          confirmLabel="Cancel Transfer"
+        />
+      )}
     </div>
   );
 }
