@@ -5,6 +5,8 @@ import { useDebounce } from '../../hooks/useDebounce'
 import { UOM_OPTIONS } from '../../constants'
 
 export default function LineItemTable({ lines = [], onChange, columns, readOnly = false }) {
+  const getLineId = (line, idx) => line.id || line._id || `line-${idx}`
+
   const addLine = () => {
     const newLine = {
       id: crypto.randomUUID(),
@@ -19,12 +21,12 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
   }
 
   const removeLine = (id) => {
-    onChange(lines.filter((l) => l.id !== id))
+    onChange(lines.filter((l, idx) => getLineId(l, idx) !== id))
   }
 
   const updateLine = (id, field, value) => {
     onChange(
-      lines.map((l) => (l.id === id ? { ...l, [field]: value } : l))
+      lines.map((l, idx) => (getLineId(l, idx) === id ? { ...l, [field]: value } : l))
     )
   }
 
@@ -43,15 +45,19 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {lines.map((line) => (
+            {lines.map((line, idx) => {
+              const lineId = getLineId(line, idx)
+              return (
               <LineRow
-                key={line.id}
+                key={lineId}
+                lineId={lineId}
                 line={line}
                 readOnly={readOnly}
                 onUpdate={updateLine}
                 onRemove={removeLine}
               />
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
@@ -68,14 +74,20 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
   )
 }
 
-function LineRow({ line, readOnly, onUpdate, onRemove }) {
+function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
   const debounced = useDebounce(searchTerm, 300)
 
   useEffect(() => {
-    if (debounced.length >= 2) {
+    setSearchTerm(line.productName || '')
+  }, [line.productName])
+
+  useEffect(() => {
+    const shouldSearch = debounced.trim().length >= 2 && debounced !== (line.productName || '')
+
+    if (shouldSearch) {
       productService.getAll({ search: debounced, limit: 5 })
         .then((res) => {
           setResults(res.data?.data || res.data?.products || res.data?.items || [])
@@ -85,53 +97,77 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
     } else {
       setShowDropdown(false)
     }
-  }, [debounced])
+  }, [debounced, line.productName])
 
   const selectProduct = (product) => {
-    onUpdate(line.id, 'productId', product._id || product.id)
-    onUpdate(line.id, 'productName', product.name)
-    onUpdate(line.id, 'description', product.description || '')
-    onUpdate(line.id, 'uom', product.unitOfMeasure || 'units')
-    setSearchTerm('')
+    onUpdate(lineId, 'productId', product._id || product.id)
+    onUpdate(lineId, 'productName', product.name)
+    onUpdate(lineId, 'description', product.description || '')
+    onUpdate(lineId, 'uom', product.uom || product.unitOfMeasure || 'units')
+    setSearchTerm(product.name)
     setShowDropdown(false)
+  }
+
+  const onSearchChange = (value) => {
+    setSearchTerm(value)
+    if (line.productId && value !== line.productName) {
+      onUpdate(lineId, 'productId', '')
+      onUpdate(lineId, 'productName', '')
+    }
+  }
+
+  const clearProduct = () => {
+    setSearchTerm('')
+    setResults([])
+    setShowDropdown(false)
+    onUpdate(lineId, 'productId', '')
+    onUpdate(lineId, 'productName', '')
+    onUpdate(lineId, 'description', '')
   }
 
   return (
     <tr className="group">
       <td className="px-4 py-2">
-        {line.productName ? (
-          <span className="text-sm font-medium text-gray-800">{line.productName}</span>
-        ) : (
-          <div className="relative">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search product..."
-              disabled={readOnly}
-              className="input-field text-sm"
-            />
-            {showDropdown && results.length > 0 && (
-              <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                {results.map((p) => (
-                  <button
-                    key={p._id || p.id}
-                    onClick={() => selectProduct(p)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
-                  >
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+        <div className="relative">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search product..."
+            disabled={readOnly}
+            className="input-field text-sm pr-8"
+          />
+          {!readOnly && searchTerm && (
+            <button
+              type="button"
+              onClick={clearProduct}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label="Clear selected product"
+            >
+              x
+            </button>
+          )}
+          {showDropdown && results.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+              {results.map((p) => (
+                <button
+                  key={p._id || p.id}
+                  type="button"
+                  onClick={() => selectProduct(p)}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </td>
       <td className="px-4 py-2">
         <input
           type="text"
           value={line.description || ''}
-          onChange={(e) => onUpdate(line.id, 'description', e.target.value)}
+          onChange={(e) => onUpdate(lineId, 'description', e.target.value)}
           disabled={readOnly}
           className="input-field text-sm"
           placeholder="Description"
@@ -141,7 +177,7 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
         <input
           type="number"
           value={line.qty}
-          onChange={(e) => onUpdate(line.id, 'qty', Number(e.target.value))}
+          onChange={(e) => onUpdate(lineId, 'qty', Number(e.target.value))}
           disabled={readOnly}
           min="0"
           step="0.01"
@@ -151,7 +187,7 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
       <td className="px-4 py-2">
         <select
           value={line.uom || 'units'}
-          onChange={(e) => onUpdate(line.id, 'uom', e.target.value)}
+          onChange={(e) => onUpdate(lineId, 'uom', e.target.value)}
           disabled={readOnly}
           className="input-field text-sm"
         >
@@ -164,7 +200,7 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
         <input
           type="number"
           value={line.qtyDone}
-          onChange={(e) => onUpdate(line.id, 'qtyDone', Number(e.target.value))}
+          onChange={(e) => onUpdate(lineId, 'qtyDone', Number(e.target.value))}
           disabled={readOnly}
           min="0"
           step="0.01"
@@ -174,7 +210,8 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
       {!readOnly && (
         <td className="px-2 py-2">
           <button
-            onClick={() => onRemove(line.id)}
+            type="button"
+            onClick={() => onRemove(lineId)}
             className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
           >
             <TrashIcon className="w-4 h-4" />
