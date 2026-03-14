@@ -49,14 +49,22 @@ exports.getAdjustments = async (req, res, next) => {
  */
 exports.createAdjustment = async (req, res, next) => {
   try {
-    const { productId, locationId, countedQty, reason } = req.body;
+    const { reference: incomingRef, productId, locationId, countedQty, reason } = req.body;
 
     // Get current recorded qty
     const stockQuant = await StockQuant.findOne({ productId, locationId });
     const recordedQty = stockQuant ? stockQuant.quantity : 0;
     const delta = countedQty - recordedQty;
 
-    const reference = await generateReference('ADJUSTMENT');
+    let reference = incomingRef?.trim();
+    if (reference) {
+      const exists = await StockAdjustment.exists({ reference });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+    } else {
+      reference = await generateReference('ADJUSTMENT');
+    }
 
     const adjustment = await StockAdjustment.create({
       reference,

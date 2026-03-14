@@ -48,9 +48,17 @@ exports.getTransfers = async (req, res, next) => {
  */
 exports.createTransfer = async (req, res, next) => {
   try {
-    const { scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, sourceDocument, notes, moveLines } = req.body;
 
-    const reference = await generateReference('INTERNAL');
+    let reference = incomingRef?.trim();
+    if (reference) {
+      const exists = await StockPicking.exists({ reference });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+    } else {
+      reference = await generateReference('INTERNAL');
+    }
 
     const transfer = await StockPicking.create({
       reference,
@@ -139,7 +147,15 @@ exports.updateTransfer = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Cannot edit a ${transfer.status} transfer` });
     }
 
-    const { scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+
+    if (incomingRef && incomingRef.trim() && incomingRef.trim() !== transfer.reference) {
+      const exists = await StockPicking.exists({ reference: incomingRef.trim() });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+      transfer.reference = incomingRef.trim();
+    }
 
     if (scheduledDate !== undefined) transfer.scheduledDate = scheduledDate;
     if (sourceDocument !== undefined) transfer.sourceDocument = sourceDocument;

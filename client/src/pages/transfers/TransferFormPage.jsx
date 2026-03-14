@@ -122,8 +122,14 @@ export default function TransferFormPage() {
       <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference No</label>
-            <input {...register('reference')} className="input-field bg-gray-50" readOnly />
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference No *</label>
+            <input
+              {...register('reference', { required: 'Reference is required' })}
+              className="input-field"
+              placeholder="Enter reference"
+              disabled={isReadOnly}
+            />
+            {errors.reference && <p className="text-xs text-red-500 mt-1">{errors.reference.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Scheduled Date</label>
