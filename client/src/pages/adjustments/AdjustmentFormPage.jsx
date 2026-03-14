@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adjustmentService } from '../../api/adjustmentService'
 import { warehouseService } from '../../api/warehouseService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import { previewRef } from '../../utils/generateReference'
 import Button from '../../components/common/Button'
 import StatusStepper from '../../components/common/StatusStepper'
@@ -13,13 +14,15 @@ import ConfirmDialog from '../../components/common/ConfirmDialog'
 import toast from 'react-hot-toast'
 import clsx from 'clsx'
 
-const STEPS = ['Draft', 'Done']
+const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
+const STATUS_OPTIONS = ['draft', 'waiting', 'ready', 'done', 'cancelled']
 
 export default function AdjustmentFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const isNew = id === 'new'
+  const { isManager } = useRole()
+  const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Adjustment' : `Adjustment ${id}`)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
@@ -58,6 +61,7 @@ export default function AdjustmentFormPage() {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] })
       toast.success('Adjustment saved')
       const created = res.data?.data || res.data
+      if (created?.status) setStatus(created.status)
       if (isNew) navigate(`/operations/adjustments/${created?._id || created?.id}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
@@ -74,7 +78,14 @@ export default function AdjustmentFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Validation failed'),
   })
 
-  const onSave = (formData) => { saveMutation.mutate({ ...formData, lines }) }
+  const onSave = (formData) => {
+    saveMutation.mutate({
+      ...formData,
+      reference: formData.reference || previewRef('ADJ'),
+      status: isManager ? status : 'draft',
+      lines,
+    })
+  }
   const isReadOnly = status === 'done' || status === 'cancelled'
 
   if (fetchLoading && !isNew) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
@@ -100,6 +111,9 @@ export default function AdjustmentFormPage() {
               <Button onClick={handleSubmit(onSave)} loading={saveMutation.isPending}>Save</Button>
               {!isNew && <Button variant="success" onClick={() => validateMutation.mutate()} loading={validateMutation.isPending}>Validate</Button>}
             </>
+          )}
+          {status !== 'draft' && isManager && (
+            <Button onClick={handleSubmit(onSave)} loading={saveMutation.isPending}>Save</Button>
           )}
         </div>
       </div>
@@ -129,6 +143,19 @@ export default function AdjustmentFormPage() {
             <select {...register('location')} className="input-field" disabled={isReadOnly}>
               <option value="">Select location...</option>
               {(locations || []).map((l) => <option key={l._id || l.id} value={l._id || l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="input-field"
+              disabled={!isManager}
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
             </select>
           </div>
         </div>
