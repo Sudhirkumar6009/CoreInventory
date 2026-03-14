@@ -28,8 +28,8 @@ export default function TransferListPage() {
 
   const columns = [
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
-    { key: 'sourceLocation', label: 'From', render: (r) => r.sourceLocation?.name || r.sourceLocation || '--' },
-    { key: 'destinationLocation', label: 'To', render: (r) => r.destinationLocation?.name || r.destinationLocation || '--' },
+    { key: 'sourceLocation', label: 'From', render: (r) => r.sourceLocation?.name || r.sourceText || r.sourceLocation || '--' },
+    { key: 'destinationLocation', label: 'To', render: (r) => r.destinationLocation?.name || r.destinationText || r.destinationLocation || '--' },
     { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
   ]

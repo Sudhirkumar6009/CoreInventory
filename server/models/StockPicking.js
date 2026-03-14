@@ -23,10 +23,25 @@ const stockPickingSchema = new mongoose.Schema(
       ref: "Location",
       default: null,
     },
+    sourceText: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     destinationLocation: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Location",
       default: null,
+    },
+    destinationText: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    warehouseLabel: {
+      type: String,
+      trim: true,
+      default: "",
     },
     scheduledDate: {
       type: Date,
@@ -54,6 +69,11 @@ const stockPickingSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
+    },
+    createdByRole: {
+      type: String,
+      enum: ["manager", "staff"],
+      default: "staff",
     },
   },
   {
