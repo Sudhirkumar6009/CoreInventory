@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { transferService } from "../../api/transferService";
-import { warehouseService } from "../../api/warehouseService";
+import { receiptService } from "../../api/receiptService";
+import { useAuthStore } from "../../store/authStore";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import { previewRef } from "../../utils/generateReference";
 import Button from "../../components/common/Button";
@@ -32,127 +32,123 @@ const normalizeLines = (rawLines = []) => {
     qty: Number(line.qty ?? line.qtyOrdered ?? 0),
     qtyDone: Number(line.qtyDone ?? 0),
     uom: line.uom || line.productId?.uom || line.product?.uom || "units",
-    fromLocationId: line.fromLocationId?._id || line.fromLocationId || null,
     toLocationId: line.toLocationId?._id || line.toLocationId || null,
   }));
 };
 
-export default function TransferFormPage() {
+export default function ReceiptFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isNew = id === "new";
+  const currentUser = useAuthStore((s) => s.user);
+  const isNew = !id || id === "new" || id === "undefined";
 
-  useDocumentTitle(isNew ? "New Transfer" : `Transfer ${id}`);
+  useDocumentTitle(isNew ? "New Receipt" : `Receipt ${id}`);
 
   const {
     register,
     handleSubmit,
     reset,
-    watch,
     formState: { errors },
   } = useForm();
   const [lines, setLines] = useState([]);
   const [status, setStatus] = useState("draft");
   const [showCancel, setShowCancel] = useState(false);
 
-  const srcLoc = watch("sourceLocation");
-  const destLoc = watch("destinationLocation");
-  const sameLocation = srcLoc && destLoc && srcLoc === destLoc;
-
-  const { data: locations = [] } = useQuery({
-    queryKey: ["locations"],
+  const { data: receipt, isLoading: fetchLoading } = useQuery({
+    queryKey: ["receipt", id],
     queryFn: () =>
-      warehouseService
-        .getLocations()
-        .then((r) => r.data?.data || r.data?.locations || r.data || []),
-  });
-
-  const { data: transfer, isLoading: fetchLoading } = useQuery({
-    queryKey: ["transfer", id],
-    queryFn: () =>
-      transferService.getById(id).then((r) => r.data?.data || r.data),
+      receiptService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   });
 
   useEffect(() => {
-    if (transfer) {
+    if (receipt) {
       reset({
-        reference: transfer.reference,
-        sourceLocation:
-          transfer.sourceLocation?._id || transfer.sourceLocation || "",
-        destinationLocation:
-          transfer.destinationLocation?._id ||
-          transfer.destinationLocation ||
-          "",
-        scheduledDate: transfer.scheduledDate?.split("T")[0],
-        notes: transfer.notes || "",
+        reference: receipt.reference,
+        responsibleUser: receipt.createdBy?.email || currentUser?.email || "",
+        scheduledDate: receipt.scheduledDate?.split("T")[0],
+        sourceDocument: receipt.sourceDocument,
+        notes: receipt.notes || "",
       });
       setLines(
         normalizeLines(
-          transfer.moveLines || transfer.lines || transfer.items || [],
+          receipt.moveLines || receipt.lines || receipt.items || [],
         ),
       );
-      setStatus(transfer.status || "draft");
+      setStatus(receipt.status || "draft");
     } else if (isNew) {
       reset({
-        reference: previewRef("INT"),
-        sourceLocation: "",
-        destinationLocation: "",
+        reference: previewRef("IN"),
+        responsibleUser: currentUser?.email || "",
         scheduledDate: new Date().toISOString().split("T")[0],
+        sourceDocument: "",
         notes: "",
       });
       setLines([]);
       setStatus("draft");
     }
-  }, [transfer, isNew, reset]);
+  }, [receipt, isNew, reset, currentUser?.email]);
 
   const saveMutation = useMutation({
-    mutationFn: (data) =>
-      isNew ? transferService.create(data) : transferService.update(id, data),
+    mutationFn: (data) => {
+      if (!isNew && !id) {
+        throw new Error("Receipt id is missing for update");
+      }
+      return isNew
+        ? receiptService.create(data)
+        : receiptService.update(id, data);
+    },
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ["transfers"] });
-      toast.success("Transfer saved");
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      toast.success("Receipt saved");
       const created = res.data?.data || res.data;
-      if (isNew)
-        navigate(`/operations/transfers/${created?._id || created?.id}`, {
-          replace: true,
-        });
+      const newId = created?._id || created?.id || id;
+      if (isNew && newId)
+        navigate(`/operations/receipts/${newId}`, { replace: true });
     },
     onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
 
   const validateMutation = useMutation({
-    mutationFn: () => transferService.validate(id),
+    mutationFn: () => receiptService.validate(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transfers"] });
-      queryClient.invalidateQueries({ queryKey: ["transfer", id] });
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["receipt", id] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-kpis"] });
+      queryClient.invalidateQueries({ queryKey: ["moves"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Transfer validated! Stock moved between locations.");
+      toast.success("Receipt validated! Stock has been updated.");
     },
     onError: (err) =>
       toast.error(err.response?.data?.message || "Validation failed"),
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => transferService.cancel(id),
+    mutationFn: () => receiptService.cancel(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transfers"] });
-      queryClient.invalidateQueries({ queryKey: ["transfer", id] });
-      toast.success("Transfer cancelled");
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["receipt", id] });
+      toast.success("Receipt cancelled");
       setShowCancel(false);
     },
     onError: (err) =>
       toast.error(err.response?.data?.message || "Cancel failed"),
   });
 
-  const onSave = (formData) => {
-    if (sameLocation) {
-      toast.error("Source and destination cannot be the same location.");
-      return;
-    }
+  const returnMutation = useMutation({
+    mutationFn: () => receiptService.return_(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      queryClient.invalidateQueries({ queryKey: ["receipt", id] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      toast.success("Return processed. Stock reversed.");
+    },
+    onError: (err) =>
+      toast.error(err.response?.data?.message || "Return failed"),
+  });
 
+  const onSave = (formData) => {
     const hasPartialLines = (lines || []).some((line) => {
       const productId = getLineProductId(line);
       const qtyOrdered = Number(line.qty || line.qtyOrdered || 0);
@@ -160,7 +156,8 @@ export default function TransferFormPage() {
         !!productId ||
         !!line.description ||
         qtyOrdered > 0 ||
-        Number(line.qtyDone || 0) > 0;
+        Number(line.qtyDone || 0) > 0 ||
+        !!line.toLocationId;
       const isValid = !!productId && qtyOrdered > 0;
       return hasAnyData && !isValid;
     });
@@ -179,15 +176,17 @@ export default function TransferFormPage() {
         qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
         qtyDone: Number(line.qtyDone || 0),
         uom: line.uom || "units",
-        fromLocationId: line.fromLocationId || formData.sourceLocation || null,
-        toLocationId: line.toLocationId || formData.destinationLocation || null,
+        toLocationId: line.toLocationId || null,
       }))
       .filter((line) => line.productId && line.qtyOrdered > 0);
 
     saveMutation.mutate({
-      ...formData,
-      moveLines,
+      reference: formData.reference,
+      scheduledDate: formData.scheduledDate,
+      sourceDocument: formData.sourceDocument,
+      notes: formData.notes,
       status: "draft",
+      moveLines,
     });
   };
 
@@ -201,30 +200,24 @@ export default function TransferFormPage() {
     );
   }
 
-  const locationOptions = locations.map((l) => ({
-    value: l._id || l.id,
-    label: `${l.name}${l.shortCode ? ` (${l.shortCode})` : ""}`,
-  }));
-
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
-          {isNew ? "New Transfer" : transfer?.reference || "Transfer"}
+          {isNew ? "New Receipt" : receipt?.reference || "Receipt"}
         </h1>
         <div className="flex items-center gap-3">
           {status === "draft" && (
             <>
               <Button
                 variant="secondary"
-                onClick={() => navigate("/operations/transfers")}
+                onClick={() => navigate("/operations/receipts")}
               >
                 Discard
               </Button>
               <Button
                 onClick={handleSubmit(onSave)}
                 loading={saveMutation.isPending}
-                disabled={!!sameLocation}
               >
                 Save
               </Button>
@@ -243,10 +236,19 @@ export default function TransferFormPage() {
               </Button>
             </>
           )}
-          {(status === "done" || status === "cancelled") && (
+          {status === "done" && (
             <Button
               variant="secondary"
-              onClick={() => navigate("/operations/transfers")}
+              onClick={() => returnMutation.mutate()}
+              loading={returnMutation.isPending}
+            >
+              Return
+            </Button>
+          )}
+          {status === "cancelled" && (
+            <Button
+              variant="secondary"
+              onClick={() => navigate("/operations/receipts")}
             >
               Back to List
             </Button>
@@ -270,7 +272,7 @@ export default function TransferFormPage() {
             <input
               {...register("reference", { required: "Reference is required" })}
               className="input-field"
-              placeholder="e.g. WH/INT/00001"
+              placeholder="e.g. WH/IN/00001"
               disabled={isReadOnly}
             />
             {errors.reference && (
@@ -282,69 +284,43 @@ export default function TransferFormPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Scheduled Date
+              Responsible User
             </label>
             <input
-              type="date"
-              {...register("scheduledDate")}
-              className="input-field"
-              disabled={isReadOnly}
+              {...register("responsibleUser")}
+              className="input-field bg-gray-50"
+              placeholder="User email"
+              readOnly
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Source Location *
+              Scheduled Date *
             </label>
-            <select
-              {...register("sourceLocation", {
-                required: "Source location is required",
-              })}
+            <input
+              type="date"
+              {...register("scheduledDate", { required: "Date is required" })}
               className="input-field"
               disabled={isReadOnly}
-            >
-              <option value="">Select source location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            {errors.sourceLocation && (
+            />
+            {errors.scheduledDate && (
               <p className="text-xs text-red-500 mt-1">
-                {errors.sourceLocation.message}
+                {errors.scheduledDate.message}
               </p>
             )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Destination Location *
+              Source Document
             </label>
-            <select
-              {...register("destinationLocation", {
-                required: "Destination location is required",
-              })}
+            <input
+              {...register("sourceDocument")}
               className="input-field"
+              placeholder="PO number or reference"
               disabled={isReadOnly}
-            >
-              <option value="">Select destination location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            {errors.destinationLocation && (
-              <p className="text-xs text-red-500 mt-1">
-                {errors.destinationLocation.message}
-              </p>
-            )}
-            {sameLocation && (
-              <p className="text-xs text-red-500 mt-1">
-                Source and destination cannot be the same location.
-              </p>
-            )}
+            />
           </div>
 
           <div className="md:col-span-2">
@@ -366,15 +342,18 @@ export default function TransferFormPage() {
         <h2 className="text-lg font-semibold text-gray-800 mb-3">
           Product Lines
         </h2>
-        <div className="text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-4 py-2 mb-3">
-          Products will be moved from{" "}
-          <strong>Source Location to Destination Location</strong> selected
-          above.
+        <div className="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-3">
+          Select the <strong>destination location</strong> for each product line
+          and product details will be auto-filled from stock or product master
+          data.
         </div>
         <LineItemTable
           lines={lines}
           onChange={setLines}
           readOnly={isReadOnly}
+          showLocation={true}
+          locationField="toLocationId"
+          locationLabel="Destination Location"
         />
       </div>
 
@@ -382,9 +361,10 @@ export default function TransferFormPage() {
         isOpen={showCancel}
         onClose={() => setShowCancel(false)}
         onConfirm={() => cancelMutation.mutate()}
-        title="Cancel Transfer"
-        message="Are you sure you want to cancel this transfer? This action cannot be undone."
-        confirmLabel="Cancel Transfer"
+        title="Cancel Receipt"
+        message="Are you sure you want to cancel this receipt? This action cannot be undone."
+        confirmLabel="Cancel Receipt"
+        loading={cancelMutation.isPending}
       />
     </div>
   );

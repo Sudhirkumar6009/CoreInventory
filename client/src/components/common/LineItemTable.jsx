@@ -76,6 +76,12 @@ export default function LineItemTable({
     )
   }
 
+  const updateLineFields = (id, patch) => {
+    onChange(
+      lines.map((l, idx) => (getLineId(l, idx) === id ? { ...l, ...patch } : l))
+    )
+  }
+
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="overflow-x-auto">
@@ -104,11 +110,9 @@ export default function LineItemTable({
                   lineId={lineId}
                   line={line}
                   readOnly={readOnly}
-                  onPatch={updateLinePatch}
+                  onUpdate={updateLine}
+                  onUpdateFields={updateLineFields}
                   onRemove={removeLine}
-                  showLocation={showLocation}
-                  locationField={locationField}
-                  locations={resolvedLocations}
                 />
               )
             })}
@@ -139,16 +143,7 @@ export default function LineItemTable({
   )
 }
 
-function LineRow({
-  lineId,
-  line,
-  readOnly,
-  onPatch,
-  onRemove,
-  showLocation,
-  locationField,
-  locations,
-}) {
+function LineRow({ lineId, line, readOnly, onUpdate, onUpdateFields, onRemove }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
@@ -230,7 +225,12 @@ function LineRow({
   }
 
   const selectProduct = (product) => {
-    setSearchTerm(product.name || '')
+    onUpdateFields(lineId, {
+      productId: product._id || product.id,
+      productName: product.name,
+      uom: product.uom || product.unitOfMeasure || 'units',
+    })
+    setSearchTerm(product.name)
     setShowDropdown(false)
     void applyProductDetails(product)
   }
@@ -238,11 +238,7 @@ function LineRow({
   const onSearchChange = (value) => {
     setSearchTerm(value)
     if (selectedProductId && value !== selectedProductName) {
-      onPatch(lineId, {
-        productId: '',
-        productName: '',
-        description: '',
-      })
+      onUpdateFields(lineId, { productId: '', productName: '' })
     }
   }
 
@@ -250,16 +246,7 @@ function LineRow({
     setSearchTerm('')
     setResults([])
     setShowDropdown(false)
-    onPatch(lineId, {
-      productId: '',
-      productName: '',
-      description: '',
-      availableQty: 0,
-    })
-  }
-
-  const onQtyChange = (value) => {
-    onPatch(lineId, { qty: toNumberOrDefault(value, 0) })
+    onUpdateFields(lineId, { productId: '', productName: '' })
   }
 
   return (
