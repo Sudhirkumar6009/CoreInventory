@@ -18,7 +18,7 @@ export default function WarehouseSettingsPage() {
 
   const { data: warehouses, isLoading } = useQuery({
     queryKey: ['warehouses'],
-    queryFn: () => warehouseService.getAll().then((r) => r.data?.warehouses || r.data || []),
+    queryFn: () => warehouseService.getAll().then((r) => r.data?.data || []),
   })
 
   useEffect(() => {

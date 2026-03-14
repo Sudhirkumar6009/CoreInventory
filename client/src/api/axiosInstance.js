@@ -15,7 +15,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const status = err.response?.status
+    const requestUrl = err.config?.url || ''
+    const isAuthRequest = requestUrl.includes('/auth/login')
+      || requestUrl.includes('/auth/register')
+      || requestUrl.includes('/auth/send-otp')
+      || requestUrl.includes('/auth/verify-otp')
+      || requestUrl.includes('/auth/reset-password')
+
+    if (status === 401 && !isAuthRequest) {
       useAuthStore.getState().logout()
       window.location.href = '/login'
     }

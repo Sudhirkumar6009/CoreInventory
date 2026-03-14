@@ -18,12 +18,12 @@ export default function LocationSettingsPage() {
 
   const { data: locations, isLoading } = useQuery({
     queryKey: ['locations'],
-    queryFn: () => warehouseService.getLocations().then((r) => r.data?.locations || r.data || []),
+    queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || []),
   })
 
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses'],
-    queryFn: () => warehouseService.getAll().then((r) => r.data?.warehouses || r.data || []),
+    queryFn: () => warehouseService.getAll().then((r) => r.data?.data || []),
   })
 
   useEffect(() => {

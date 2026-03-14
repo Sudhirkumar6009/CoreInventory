@@ -30,7 +30,7 @@ router.post(
       .withMessage('Password must contain an uppercase letter')
       .matches(/\d/)
       .withMessage('Password must contain a number'),
-    body('role').optional().isIn(['manager', 'staff']).withMessage('Role must be manager or staff'),
+    body('role').optional().toLowerCase().isIn(['manager', 'staff']).withMessage('Role must be manager or staff'),
   ],
   validate,
   register

@@ -20,12 +20,20 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const res = await authService.login(data)
-      setAuth(res.data.token, res.data.user)
+      const payload = res.data?.data || res.data
+      const token = payload?.accessToken || payload?.token
+      const user = payload?.user
+
+      if (!token || !user) {
+        throw new Error('Unexpected login response from server')
+      }
+
+      setAuth(token, user)
       toast.success('Welcome back!')
       const from = location.state?.from?.pathname || '/dashboard'
       navigate(from, { replace: true })
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Invalid credentials')
+      toast.error(err.response?.data?.message || err.message || 'Invalid credentials')
     } finally {
       setLoading(false)
     }
