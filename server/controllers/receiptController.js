@@ -54,9 +54,17 @@ exports.getReceipts = async (req, res, next) => {
  */
 exports.createReceipt = async (req, res, next) => {
   try {
-    const { supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
 
-    const reference = await generateReference('IN');
+    let reference = incomingRef?.trim();
+    if (reference) {
+      const exists = await StockPicking.exists({ reference });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+    } else {
+      reference = await generateReference('IN');
+    }
 
     const receipt = await StockPicking.create({
       reference,
@@ -148,7 +156,15 @@ exports.updateReceipt = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Cannot edit a cancelled receipt' });
     }
 
-    const { supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+
+    if (incomingRef && incomingRef.trim() && incomingRef.trim() !== receipt.reference) {
+      const exists = await StockPicking.exists({ reference: incomingRef.trim() });
+      if (exists) {
+        return res.status(400).json({ success: false, message: 'Reference already exists' });
+      }
+      receipt.reference = incomingRef.trim();
+    }
 
     if (supplierOrCustomer !== undefined) receipt.supplierOrCustomer = supplierOrCustomer;
     if (scheduledDate !== undefined) receipt.scheduledDate = scheduledDate;
