@@ -19,7 +19,6 @@ exports.getReceipts = async (req, res, next) => {
     if (search) {
       filter.$or = [
         { reference: { $regex: search, $options: 'i' } },
-        { supplierOrCustomer: { $regex: search, $options: 'i' } },
         { sourceDocument: { $regex: search, $options: 'i' } },
       ];
     }
@@ -37,9 +36,14 @@ exports.getReceipts = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
+    const normalizedReceipts = receipts.map((receipt) => ({
+      ...receipt,
+      responsibleUserEmail: receipt.createdBy?.email || '',
+    }));
+
     res.json({
       success: true,
-      data: receipts,
+      data: normalizedReceipts,
       pagination: { page: parseInt(page), limit: parseInt(limit), total, pages: Math.ceil(total / parseInt(limit)) },
     });
   } catch (error) {
@@ -54,7 +58,21 @@ exports.getReceipts = async (req, res, next) => {
  */
 exports.createReceipt = async (req, res, next) => {
   try {
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+
+    if (Array.isArray(moveLines) && moveLines.length > 0) {
+      const hasInvalidLine = moveLines.some((line) => {
+        const qtyOrdered = Number(line?.qtyOrdered || 0);
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+      });
+
+      if (hasInvalidLine) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each move line must include a valid product and quantity greater than zero',
+        });
+      }
+    }
 
     let reference = incomingRef?.trim();
     if (reference) {
@@ -69,7 +87,6 @@ exports.createReceipt = async (req, res, next) => {
     const receipt = await StockPicking.create({
       reference,
       pickingType: 'IN',
-      supplierOrCustomer,
       scheduledDate,
       sourceDocument,
       notes,
@@ -82,7 +99,6 @@ exports.createReceipt = async (req, res, next) => {
       const lines = moveLines.map((line) => ({
         pickingId: receipt._id,
         productId: line.productId,
-        description: line.description || '',
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
@@ -102,7 +118,10 @@ exports.createReceipt = async (req, res, next) => {
         ],
       });
 
-    res.status(201).json({ success: true, data: populatedReceipt });
+    const createdReceipt = populatedReceipt.toObject();
+    createdReceipt.responsibleUserEmail = createdReceipt.createdBy?.email || '';
+
+    res.status(201).json({ success: true, data: createdReceipt });
   } catch (error) {
     next(error);
   }
@@ -129,7 +148,10 @@ exports.getReceipt = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Receipt not found' });
     }
 
-    res.json({ success: true, data: receipt });
+    const receiptData = receipt.toObject();
+    receiptData.responsibleUserEmail = receiptData.createdBy?.email || '';
+
+    res.json({ success: true, data: receiptData });
   } catch (error) {
     next(error);
   }
@@ -156,7 +178,21 @@ exports.updateReceipt = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Cannot edit a cancelled receipt' });
     }
 
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+
+    if (Array.isArray(moveLines) && moveLines.length > 0) {
+      const hasInvalidLine = moveLines.some((line) => {
+        const qtyOrdered = Number(line?.qtyOrdered || 0);
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+      });
+
+      if (hasInvalidLine) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each move line must include a valid product and quantity greater than zero',
+        });
+      }
+    }
 
     if (incomingRef && incomingRef.trim() && incomingRef.trim() !== receipt.reference) {
       const exists = await StockPicking.exists({ reference: incomingRef.trim() });
@@ -166,7 +202,6 @@ exports.updateReceipt = async (req, res, next) => {
       receipt.reference = incomingRef.trim();
     }
 
-    if (supplierOrCustomer !== undefined) receipt.supplierOrCustomer = supplierOrCustomer;
     if (scheduledDate !== undefined) receipt.scheduledDate = scheduledDate;
     if (sourceDocument !== undefined) receipt.sourceDocument = sourceDocument;
     if (notes !== undefined) receipt.notes = notes;
@@ -181,7 +216,6 @@ exports.updateReceipt = async (req, res, next) => {
       const lines = moveLines.map((line) => ({
         pickingId: receipt._id,
         productId: line.productId,
-        description: line.description || '',
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
@@ -201,7 +235,10 @@ exports.updateReceipt = async (req, res, next) => {
         ],
       });
 
-    res.json({ success: true, data: updatedReceipt });
+    const updatedReceiptData = updatedReceipt.toObject();
+    updatedReceiptData.responsibleUserEmail = updatedReceiptData.createdBy?.email || '';
+
+    res.json({ success: true, data: updatedReceiptData });
   } catch (error) {
     next(error);
   }
@@ -291,7 +328,10 @@ exports.validateReceipt = async (req, res, next) => {
         ],
       });
 
-    res.json({ success: true, message: 'Receipt validated successfully', data: populatedReceipt });
+    const validatedReceipt = populatedReceipt.toObject();
+    validatedReceipt.responsibleUserEmail = validatedReceipt.createdBy?.email || '';
+
+    res.json({ success: true, message: 'Receipt validated successfully', data: validatedReceipt });
   } catch (error) {
     await session.abortTransaction();
     next(error);

@@ -4,6 +4,17 @@ import { productService } from '../../api/productService'
 import { useDebounce } from '../../hooks/useDebounce'
 import { UOM_OPTIONS } from '../../constants'
 
+const getProductIdValue = (line) => {
+  const raw = line?.productId || line?.product || null
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
+}
+
+const getProductNameValue = (line) => {
+  return line?.productName || line?.product?.name || line?.productId?.name || ''
+}
+
 export default function LineItemTable({ lines = [], onChange, columns, readOnly = false }) {
   const getLineId = (line, idx) => line.id || line._id || `line-${idx}`
 
@@ -12,7 +23,6 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
       id: crypto.randomUUID(),
       productId: '',
       productName: '',
-      description: '',
       qty: 0,
       qtyDone: 0,
       uom: 'units',
@@ -37,7 +47,6 @@ export default function LineItemTable({ lines = [], onChange, columns, readOnly 
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-100">
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-1/4">Product</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Description</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">UoM</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty Done</th>
@@ -79,13 +88,15 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
   const [results, setResults] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
   const debounced = useDebounce(searchTerm, 300)
+  const selectedProductId = getProductIdValue(line)
+  const selectedProductName = getProductNameValue(line)
 
   useEffect(() => {
-    setSearchTerm(line.productName || '')
-  }, [line.productName])
+    setSearchTerm(selectedProductName)
+  }, [selectedProductName])
 
   useEffect(() => {
-    const shouldSearch = debounced.trim().length >= 2 && debounced !== (line.productName || '')
+    const shouldSearch = debounced.trim().length >= 2 && debounced !== selectedProductName
 
     if (shouldSearch) {
       productService.getAll({ search: debounced, limit: 5 })
@@ -97,12 +108,11 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
     } else {
       setShowDropdown(false)
     }
-  }, [debounced, line.productName])
+  }, [debounced, selectedProductName])
 
   const selectProduct = (product) => {
     onUpdate(lineId, 'productId', product._id || product.id)
     onUpdate(lineId, 'productName', product.name)
-    onUpdate(lineId, 'description', product.description || '')
     onUpdate(lineId, 'uom', product.uom || product.unitOfMeasure || 'units')
     setSearchTerm(product.name)
     setShowDropdown(false)
@@ -110,7 +120,7 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
 
   const onSearchChange = (value) => {
     setSearchTerm(value)
-    if (line.productId && value !== line.productName) {
+    if (selectedProductId && value !== selectedProductName) {
       onUpdate(lineId, 'productId', '')
       onUpdate(lineId, 'productName', '')
     }
@@ -122,7 +132,6 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
     setShowDropdown(false)
     onUpdate(lineId, 'productId', '')
     onUpdate(lineId, 'productName', '')
-    onUpdate(lineId, 'description', '')
   }
 
   return (
@@ -162,16 +171,6 @@ function LineRow({ lineId, line, readOnly, onUpdate, onRemove }) {
             </div>
           )}
         </div>
-      </td>
-      <td className="px-4 py-2">
-        <input
-          type="text"
-          value={line.description || ''}
-          onChange={(e) => onUpdate(lineId, 'description', e.target.value)}
-          disabled={readOnly}
-          className="input-field text-sm"
-          placeholder="Description"
-        />
       </td>
       <td className="px-4 py-2">
         <input

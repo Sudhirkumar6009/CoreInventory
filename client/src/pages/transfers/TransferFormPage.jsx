@@ -15,6 +15,26 @@ import toast from 'react-hot-toast'
 
 const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
 
+const getLineProductId = (line) => {
+  const raw = line?.productId || line?.product
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
+}
+
+const normalizeLines = (rawLines = []) => {
+  return rawLines.map((line, idx) => ({
+    id: line.id || line._id || `line-${idx}`,
+    productId: getLineProductId(line),
+    productName: line.productName || line.productId?.name || line.product?.name || '',
+    qty: Number(line.qty ?? line.qtyOrdered ?? 0),
+    qtyDone: Number(line.qtyDone ?? 0),
+    uom: line.uom || line.productId?.uom || line.product?.uom || 'units',
+    fromLocationId: line.fromLocationId?._id || line.fromLocationId || null,
+    toLocationId: line.toLocationId?._id || line.toLocationId || null,
+  }))
+}
+
 export default function TransferFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -50,7 +70,7 @@ export default function TransferFormPage() {
         destinationLocation: transfer.destinationLocation?._id || transfer.destinationLocation,
         scheduledDate: transfer.scheduledDate?.split('T')[0],
       })
-      setLines(transfer.lines || transfer.items || [])
+      setLines(normalizeLines(transfer.moveLines || transfer.lines || transfer.items || []))
       setStatus(transfer.status || 'draft')
     } else if (isNew) {
       reset({ reference: previewRef('INT'), sourceLocation: '', destinationLocation: '', scheduledDate: '' })
@@ -89,7 +109,33 @@ export default function TransferFormPage() {
     },
   })
 
-  const onSave = (formData) => { saveMutation.mutate({ ...formData, lines }) }
+  const onSave = (formData) => {
+    const hasPartialLines = (lines || []).some((line) => {
+      const productId = getLineProductId(line)
+      const qtyOrdered = Number(line.qty || line.qtyOrdered || 0)
+      const hasAnyData = !!productId || qtyOrdered > 0 || Number(line.qtyDone || 0) > 0
+      const isValid = !!productId && qtyOrdered > 0
+      return hasAnyData && !isValid
+    })
+
+    if (hasPartialLines) {
+      toast.error('Complete product and quantity for each line, or remove incomplete lines')
+      return
+    }
+
+    const moveLines = (lines || [])
+      .map((line) => ({
+        productId: getLineProductId(line),
+        qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
+        qtyDone: Number(line.qtyDone || 0),
+        uom: line.uom || 'units',
+        fromLocationId: line.fromLocationId || null,
+        toLocationId: line.toLocationId || null,
+      }))
+      .filter((line) => line.productId && line.qtyOrdered > 0)
+
+    saveMutation.mutate({ ...formData, moveLines })
+  }
   const isReadOnly = status === 'done' || status === 'cancelled'
   if (fetchLoading && !isNew) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
 

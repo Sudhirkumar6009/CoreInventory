@@ -14,6 +14,25 @@ import toast from 'react-hot-toast'
 
 const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
 
+const getLineProductId = (line) => {
+  const raw = line?.productId || line?.product
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
+}
+
+const normalizeLines = (rawLines = []) => {
+  return rawLines.map((line, idx) => ({
+    id: line.id || line._id || `line-${idx}`,
+    productId: getLineProductId(line),
+    productName: line.productName || line.productId?.name || line.product?.name || '',
+    qty: Number(line.qty ?? line.qtyOrdered ?? 0),
+    qtyDone: Number(line.qtyDone ?? 0),
+    uom: line.uom || line.productId?.uom || line.product?.uom || 'units',
+    fromLocationId: line.fromLocationId?._id || line.fromLocationId || null,
+  }))
+}
+
 export default function DeliveryFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -41,7 +60,7 @@ export default function DeliveryFormPage() {
         carrier: delivery.carrier,
         sourceDocument: delivery.sourceDocument,
       })
-      setLines(delivery.lines || delivery.items || [])
+      setLines(normalizeLines(delivery.moveLines || delivery.lines || delivery.items || []))
       setStatus(delivery.status || 'draft')
     } else if (isNew) {
       reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '', sourceDocument: '' })
@@ -84,7 +103,30 @@ export default function DeliveryFormPage() {
   })
 
   const onSave = (formData) => {
-    saveMutation.mutate({ ...formData, lines, status: 'draft' })
+    const hasPartialLines = (lines || []).some((line) => {
+      const productId = getLineProductId(line)
+      const qtyOrdered = Number(line.qty || line.qtyOrdered || 0)
+      const hasAnyData = !!productId || qtyOrdered > 0 || Number(line.qtyDone || 0) > 0
+      const isValid = !!productId && qtyOrdered > 0
+      return hasAnyData && !isValid
+    })
+
+    if (hasPartialLines) {
+      toast.error('Complete product and quantity for each line, or remove incomplete lines')
+      return
+    }
+
+    const moveLines = (lines || [])
+      .map((line) => ({
+        productId: getLineProductId(line),
+        qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
+        qtyDone: Number(line.qtyDone || 0),
+        uom: line.uom || 'units',
+        fromLocationId: line.fromLocationId || null,
+      }))
+      .filter((line) => line.productId && line.qtyOrdered > 0)
+
+    saveMutation.mutate({ ...formData, moveLines, status: 'draft' })
   }
 
   const isReadOnly = status === 'done' || status === 'cancelled'

@@ -17,7 +17,7 @@ export default function CategoryListPage() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showDelete, setShowDelete] = useState(null)
-  const [formData, setFormData] = useState({ name: '', shortCode: '', description: '' })
+  const [formData, setFormData] = useState({ name: '', shortCode: '' })
 
   const { data, isLoading } = useQuery({
     queryKey: ['categories'],
@@ -44,14 +44,13 @@ export default function CategoryListPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Delete failed'),
   })
 
-  const openNew = () => { setEditing(null); setFormData({ name: '', shortCode: '', description: '' }); setShowForm(true) }
-  const openEdit = (cat) => { setEditing(cat); setFormData({ name: cat.name, shortCode: cat.shortCode || '', description: cat.description || '' }); setShowForm(true) }
+  const openNew = () => { setEditing(null); setFormData({ name: '', shortCode: '' }); setShowForm(true) }
+  const openEdit = (cat) => { setEditing(cat); setFormData({ name: cat.name, shortCode: cat.shortCode || '' }); setShowForm(true) }
   const closeForm = () => { setShowForm(false); setEditing(null) }
 
   const columns = [
     { key: 'name', label: 'Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
     { key: 'shortCode', label: 'Short Code' },
-    { key: 'description', label: 'Description', render: (r) => r.description || '--' },
     {
       key: 'actions', label: '', render: (r) => isManager ? (
         <div className="flex items-center gap-1">
@@ -79,10 +78,6 @@ export default function CategoryListPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Short Code</label>
             <input value={formData.shortCode} onChange={(e) => setFormData({ ...formData, shortCode: e.target.value })} className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-            <textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="input-field" rows={2} />
           </div>
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={closeForm}>Cancel</Button>

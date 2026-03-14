@@ -12,11 +12,6 @@ const stockMoveLineSchema = new mongoose.Schema(
       ref: 'Product',
       required: true,
     },
-    description: {
-      type: String,
-      trim: true,
-      default: '',
-    },
     qtyOrdered: {
       type: Number,
       required: true,

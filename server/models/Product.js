@@ -30,11 +30,6 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
-    description: {
-      type: String,
-      trim: true,
-      default: '',
-    },
     reorderPoint: {
       type: Number,
       default: 0,
