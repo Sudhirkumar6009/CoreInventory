@@ -1,100 +1,94 @@
-import { useState, useEffect } from "react";
-import { TrashIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { productService } from "../../api/productService";
-import { warehouseService } from "../../api/warehouseService";
-import { useDebounce } from "../../hooks/useDebounce";
-import { useQuery } from "@tanstack/react-query";
-import { UOM_OPTIONS } from "../../constants";
+import { useEffect, useMemo, useState } from 'react'
+import { TrashIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { productService } from '../../api/productService'
+import { warehouseService } from '../../api/warehouseService'
+import { useDebounce } from '../../hooks/useDebounce'
+import { UOM_OPTIONS } from '../../constants'
 
 const toNumberOrDefault = (value, fallback = 0) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
 
-/**
- * LineItemTable
- * Props:
- *  lines        – array of line objects
- *  onChange     – (lines) => void
- *  readOnly     – boolean
- *  showLocation – boolean: show a location dropdown column per line
- *  locationField – string: which field to set on the line ("toLocationId" | "fromLocationId")
- *  locationLabel – string: column header label (default "Location")
- */
+const getProductIdValue = (line) => {
+  const raw = line?.productId || line?.product || null
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
+}
+
+const getProductNameValue = (line) => {
+  return line?.productName || line?.product?.name || line?.productId?.name || ''
+}
+
 export default function LineItemTable({
   lines = [],
   onChange,
   readOnly = false,
   showLocation = false,
-  locationField = "toLocationId",
-  locationLabel = "Location",
+  locationField = 'toLocationId',
+  locationLabel = 'Location',
+  locationOptions,
+  locationWarehouse,
 }) {
-  const getLineId = (line, idx) => line.id || line._id || `line-${idx}`;
+  const [locations, setLocations] = useState([])
 
-  // Fetch locations once for all rows
-  const { data: locations = [] } = useQuery({
-    queryKey: ["locations"],
-    queryFn: () =>
-      warehouseService
-        .getLocations()
-        .then((r) => r.data?.data || r.data?.locations || r.data || []),
-    enabled: showLocation,
-  });
+  const getLineId = (line, idx) => line.id || line._id || `line-${idx}`
+
+  useEffect(() => {
+    if (!showLocation || Array.isArray(locationOptions)) return
+
+    warehouseService
+      .getLocations(locationWarehouse ? { warehouse: locationWarehouse } : undefined)
+      .then((res) => setLocations(res.data?.data || res.data?.locations || []))
+      .catch(() => setLocations([]))
+  }, [showLocation, locationOptions, locationWarehouse])
+
+  const resolvedLocations = useMemo(() => {
+    if (Array.isArray(locationOptions)) return locationOptions
+    return locations
+  }, [locationOptions, locations])
 
   const addLine = () => {
-    onChange([
-      ...lines,
-      {
-        id: crypto.randomUUID(),
-        productId: "",
-        productName: "",
-        description: "",
-        qty: 0,
-        qtyOrdered: 0,
-        qtyDone: 0,
-        uom: "units",
-        toLocationId: "",
-        fromLocationId: "",
-      },
-    ]);
-  };
+    const newLine = {
+      id: crypto.randomUUID(),
+      productId: '',
+      productName: '',
+      description: '',
+      qty: 0,
+      qtyDone: 0,
+      uom: 'units',
+      [locationField]: '',
+    }
+    onChange([...(lines || []), newLine])
+  }
 
   const removeLine = (id) => {
-    onChange(lines.filter((l, idx) => getLineId(l, idx) !== id));
-  };
+    onChange((lines || []).filter((l, idx) => getLineId(l, idx) !== id))
+  }
 
-  const updateLine = (id, field, value) => {
+  const updateLinePatch = (id, patch) => {
     onChange(
-      lines.map((l, idx) =>
-        getLineId(l, idx) === id ? { ...l, [field]: value } : l,
+      (lines || []).map((l, idx) =>
+        getLineId(l, idx) === id ? { ...l, ...patch } : l,
       ),
-    );
-  };
+    )
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full min-w-[980px]">
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-100">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-1/4">
-                Product
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
-                Description
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-24">
-                Qty
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-24">
-                UoM
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-24">
-                Qty Done
-              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-1/4">Product</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Description</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">UoM</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty Done</th>
               {showLocation && (
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-40">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-48">
                   {locationLabel}
                 </th>
               )}
@@ -102,23 +96,23 @@ export default function LineItemTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {lines.map((line, idx) => {
-              const lineId = getLineId(line, idx);
+            {(lines || []).map((line, idx) => {
+              const lineId = getLineId(line, idx)
               return (
                 <LineRow
                   key={lineId}
                   lineId={lineId}
                   line={line}
                   readOnly={readOnly}
-                  onUpdate={updateLine}
+                  onPatch={updateLinePatch}
                   onRemove={removeLine}
                   showLocation={showLocation}
                   locationField={locationField}
-                  locations={locations}
+                  locations={resolvedLocations}
                 />
-              );
+              )
             })}
-            {lines.length === 0 && (
+            {(lines || []).length === 0 && (
               <tr>
                 <td
                   colSpan={showLocation ? 7 : 6}
@@ -142,99 +136,134 @@ export default function LineItemTable({
         </button>
       )}
     </div>
-  );
+  )
 }
 
 function LineRow({
   lineId,
   line,
   readOnly,
-  onUpdate,
+  onPatch,
   onRemove,
   showLocation,
   locationField,
   locations,
 }) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [results, setResults] = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const debounced = useDebounce(searchTerm, 300);
+  const [searchTerm, setSearchTerm] = useState('')
+  const [results, setResults] = useState([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [fetchingDetails, setFetchingDetails] = useState(false)
+  const debounced = useDebounce(searchTerm, 300)
+  const selectedProductId = getProductIdValue(line)
+  const selectedProductName = getProductNameValue(line)
+  const qtyValue = toNumberOrDefault(line?.qty ?? line?.qtyOrdered, 0)
+  const qtyDoneValue = toNumberOrDefault(line?.qtyDone, 0)
+  const currentLocation = (line && line[locationField]) || ''
 
   useEffect(() => {
-    setSearchTerm(line.productName || "");
-  }, [line.productName]);
+    setSearchTerm(selectedProductName)
+  }, [selectedProductName])
 
   useEffect(() => {
-    const shouldSearch =
-      debounced.trim().length >= 2 && debounced !== (line.productName || "");
-
-    if (shouldSearch) {
-      productService
-        .getAll({ search: debounced, limit: 8 })
-        .then((res) => {
-          setResults(
-            res.data?.data || res.data?.products || res.data?.items || [],
-          );
-          setShowDropdown(true);
-        })
-        .catch(() => setResults([]));
-    } else {
-      setShowDropdown(false);
+    const shouldSearch = debounced.trim().length >= 2 && debounced !== selectedProductName
+    if (!shouldSearch) {
+      setShowDropdown(false)
+      return
     }
-  }, [debounced, line.productName]);
+
+    productService
+      .getAll({ search: debounced, limit: 8 })
+      .then((res) => {
+        setResults(res.data?.data || res.data?.products || res.data?.items || [])
+        setShowDropdown(true)
+      })
+      .catch(() => {
+        setResults([])
+        setShowDropdown(false)
+      })
+  }, [debounced, selectedProductName])
+
+  const applyProductDetails = async (product) => {
+    const productId = product._id || product.id
+    const basePatch = {
+      productId,
+      productName: product.name || '',
+      description: line?.description || product.description || product.sku || '',
+      uom: product.uom || product.unitOfMeasure || line?.uom || 'units',
+    }
+
+    onPatch(lineId, basePatch)
+
+    setFetchingDetails(true)
+    try {
+      const stockRes = await productService.getStock(productId)
+      const stockData = stockRes.data?.data || {}
+      const byLocation = Array.isArray(stockData.byLocation) ? stockData.byLocation : []
+
+      const preferredLocationId =
+        byLocation.find((entry) => toNumberOrDefault(entry?.onHand ?? entry?.quantity, 0) > 0)?.locationId ||
+        byLocation[0]?.locationId ||
+        ''
+
+      onPatch(lineId, {
+        ...basePatch,
+        availableQty: toNumberOrDefault(stockData.totalOnHand, 0),
+        ...(showLocation && !line?.[locationField] && preferredLocationId
+          ? { [locationField]: preferredLocationId }
+          : {}),
+      })
+    } catch {
+      try {
+        const detailRes = await productService.getById(productId)
+        const detail = detailRes.data?.data || detailRes.data || {}
+        onPatch(lineId, {
+          ...basePatch,
+          description: line?.description || detail.description || product.sku || '',
+          uom: detail.uom || detail.unitOfMeasure || basePatch.uom,
+        })
+      } catch {
+        // Keep base patch if detail fetch fails.
+      }
+    } finally {
+      setFetchingDetails(false)
+    }
+  }
 
   const selectProduct = (product) => {
-    const existingQty = toNumberOrDefault(line.qtyOrdered ?? line.qty, 0);
-    const defaultQty = existingQty > 0 ? existingQty : 1;
-
-    onUpdate(lineId, "productId", product._id || product.id);
-    onUpdate(lineId, "productName", product.name);
-    onUpdate(lineId, "description", product.description || "");
-    onUpdate(lineId, "uom", product.uom || product.unitOfMeasure || "units");
-    onUpdate(lineId, "qty", defaultQty);
-    onUpdate(lineId, "qtyOrdered", defaultQty);
-    if (toNumberOrDefault(line.qtyDone, 0) <= 0) {
-      onUpdate(lineId, "qtyDone", defaultQty);
-    }
-    setSearchTerm(product.name);
-    setShowDropdown(false);
-  };
+    setSearchTerm(product.name || '')
+    setShowDropdown(false)
+    void applyProductDetails(product)
+  }
 
   const onSearchChange = (value) => {
-    setSearchTerm(value);
-    if (line.productId && value !== line.productName) {
-      onUpdate(lineId, "productId", "");
-      onUpdate(lineId, "productName", "");
+    setSearchTerm(value)
+    if (selectedProductId && value !== selectedProductName) {
+      onPatch(lineId, {
+        productId: '',
+        productName: '',
+        description: '',
+      })
     }
-  };
+  }
 
   const clearProduct = () => {
-    setSearchTerm("");
-    setResults([]);
-    setShowDropdown(false);
-    onUpdate(lineId, "productId", "");
-    onUpdate(lineId, "productName", "");
-    onUpdate(lineId, "description", "");
-  };
-
-  const qtyValue = toNumberOrDefault(line.qtyOrdered ?? line.qty, 0);
-  const qtyDoneValue = toNumberOrDefault(line.qtyDone, 0);
+    setSearchTerm('')
+    setResults([])
+    setShowDropdown(false)
+    onPatch(lineId, {
+      productId: '',
+      productName: '',
+      description: '',
+      availableQty: 0,
+    })
+  }
 
   const onQtyChange = (value) => {
-    const nextQty = toNumberOrDefault(value, 0);
-    const previousQty = toNumberOrDefault(line.qtyOrdered ?? line.qty, 0);
-    onUpdate(lineId, "qty", nextQty);
-    onUpdate(lineId, "qtyOrdered", nextQty);
-    if (qtyDoneValue === 0 || qtyDoneValue === previousQty) {
-      onUpdate(lineId, "qtyDone", nextQty);
-    }
-  };
-
-  const currentLocation = line[locationField] || "";
+    onPatch(lineId, { qty: toNumberOrDefault(value, 0) })
+  }
 
   return (
     <tr className="group">
-      {/* Product search */}
       <td className="px-4 py-2">
         <div className="relative">
           <input
@@ -252,7 +281,7 @@ function LineRow({
               className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-bold"
               aria-label="Clear selected product"
             >
-              ✕
+              x
             </button>
           )}
           {showDropdown && results.length > 0 && (
@@ -266,29 +295,27 @@ function LineRow({
                 >
                   <div className="font-medium text-gray-900">{p.name}</div>
                   <div className="text-xs text-gray-500">
-                    {p.sku || "--"} | On hand:{" "}
-                    {toNumberOrDefault(p.onHand ?? p.totalOnHand, 0)}
+                    {p.sku || '--'} | On hand: {toNumberOrDefault(p.onHand ?? p.totalOnHand, 0)}
                   </div>
                 </button>
               ))}
             </div>
           )}
+          {fetchingDetails && <p className="text-[11px] text-gray-400 mt-1">Loading product details...</p>}
         </div>
       </td>
 
-      {/* Description */}
       <td className="px-4 py-2">
         <input
           type="text"
-          value={line.description || ""}
-          onChange={(e) => onUpdate(lineId, "description", e.target.value)}
+          value={line?.description || ''}
+          onChange={(e) => onPatch(lineId, { description: e.target.value })}
           disabled={readOnly}
-          className="input-field text-sm"
           placeholder="Description"
+          className="input-field text-sm"
         />
       </td>
 
-      {/* Qty */}
       <td className="px-4 py-2">
         <input
           type="number"
@@ -301,30 +328,26 @@ function LineRow({
         />
       </td>
 
-      {/* UoM */}
       <td className="px-4 py-2">
         <select
-          value={line.uom || "units"}
-          onChange={(e) => onUpdate(lineId, "uom", e.target.value)}
+          value={line?.uom || 'units'}
+          onChange={(e) => onPatch(lineId, { uom: e.target.value })}
           disabled={readOnly}
           className="input-field text-sm"
         >
-          {UOM_OPTIONS.map((u) => (
-            <option key={u} value={u}>
-              {u}
+          {UOM_OPTIONS.map((uom) => (
+            <option key={uom} value={uom}>
+              {uom}
             </option>
           ))}
         </select>
       </td>
 
-      {/* Qty Done */}
       <td className="px-4 py-2">
         <input
           type="number"
           value={qtyDoneValue}
-          onChange={(e) =>
-            onUpdate(lineId, "qtyDone", toNumberOrDefault(e.target.value, 0))
-          }
+          onChange={(e) => onPatch(lineId, { qtyDone: toNumberOrDefault(e.target.value, 0) })}
           disabled={readOnly}
           min="0"
           step="0.01"
@@ -332,27 +355,25 @@ function LineRow({
         />
       </td>
 
-      {/* Location (optional) */}
       {showLocation && (
         <td className="px-4 py-2">
           <select
             value={currentLocation}
-            onChange={(e) => onUpdate(lineId, locationField, e.target.value)}
+            onChange={(e) => onPatch(lineId, { [locationField]: e.target.value })}
             disabled={readOnly}
             className="input-field text-sm"
           >
             <option value="">Select location...</option>
-            {locations.map((loc) => (
+            {(locations || []).map((loc) => (
               <option key={loc._id || loc.id} value={loc._id || loc.id}>
                 {loc.name}
-                {loc.shortCode ? ` (${loc.shortCode})` : ""}
+                {loc.shortCode ? ` (${loc.shortCode})` : ''}
               </option>
             ))}
           </select>
         </td>
       )}
 
-      {/* Delete */}
       {!readOnly && (
         <td className="px-2 py-2">
           <button
@@ -365,5 +386,5 @@ function LineRow({
         </td>
       )}
     </tr>
-  );
+  )
 }

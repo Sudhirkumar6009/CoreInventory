@@ -15,11 +15,6 @@ const productCategorySchema = new mongoose.Schema(
       uppercase: true,
       unique: true,
     },
-    description: {
-      type: String,
-      trim: true,
-      default: '',
-    },
   },
   {
     timestamps: true,

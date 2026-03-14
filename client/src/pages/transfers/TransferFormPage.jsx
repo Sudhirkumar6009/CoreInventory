@@ -15,27 +15,24 @@ import toast from 'react-hot-toast'
 
 const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
 
-const toNumberOrDefault = (value, fallback = 0) => {
-  if (value === undefined || value === null || value === '') return fallback
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : fallback
+const getLineProductId = (line) => {
+  const raw = line?.productId || line?.product
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
 }
 
-const normalizeLineFromApi = (line = {}) => {
-  const productObj = typeof line.productId === 'object' ? line.productId : null
-  const qtyOrdered = toNumberOrDefault(line.qtyOrdered ?? line.qty, 0)
-  return {
-    id: line._id || line.id || crypto.randomUUID(),
-    productId: productObj?._id || line.productId || '',
-    productName: line.productName || productObj?.name || '',
-    description: line.description || '',
-    qty: qtyOrdered,
-    qtyOrdered,
-    qtyDone: toNumberOrDefault(line.qtyDone, 0),
-    uom: line.uom || productObj?.uom || 'units',
-    fromLocationId: line.fromLocationId?._id || line.fromLocationId || '',
-    toLocationId: line.toLocationId?._id || line.toLocationId || '',
-  }
+const normalizeLines = (rawLines = []) => {
+  return rawLines.map((line, idx) => ({
+    id: line.id || line._id || `line-${idx}`,
+    productId: getLineProductId(line),
+    productName: line.productName || line.productId?.name || line.product?.name || '',
+    qty: Number(line.qty ?? line.qtyOrdered ?? 0),
+    qtyDone: Number(line.qtyDone ?? 0),
+    uom: line.uom || line.productId?.uom || line.product?.uom || 'units',
+    fromLocationId: line.fromLocationId?._id || line.fromLocationId || null,
+    toLocationId: line.toLocationId?._id || line.toLocationId || null,
+  }))
 }
 
 export default function TransferFormPage() {
@@ -76,8 +73,7 @@ export default function TransferFormPage() {
         scheduledDate: transfer.scheduledDate?.split('T')[0],
         notes: transfer.notes || '',
       })
-      const apiLines = transfer.moveLines || transfer.lines || transfer.items || []
-      setLines(apiLines.map(normalizeLineFromApi))
+      setLines(normalizeLines(transfer.moveLines || transfer.lines || transfer.items || []))
       setStatus(transfer.status || 'draft')
     } else if (isNew) {
       reset({
@@ -124,158 +120,155 @@ export default function TransferFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Cancel failed'),
   })
 
-  // Build move lines injecting the header-level source/dest locations into each line
-  const onSave = (formData) => {
-    const fromLocationId = formData.sourceLocation || undefined
-    const toLocationId = formData.destinationLocation || undefined
+  const hasPartialLines = (lines || []).some((line) => {
+    const productId = getLineProductId(line)
+    const qtyOrdered = Number(line.qty || line.qtyOrdered || 0)
+    const hasAnyData = !!productId || qtyOrdered > 0 || Number(line.qtyDone || 0) > 0
+    const isValid = !!productId && qtyOrdered > 0
+    return hasAnyData && !isValid
+  })
 
-    const moveLines = lines
-      .filter((line) => line.productId)
-      .map((line) => ({
-        productId: line.productId,
-        description: line.description || '',
-        qtyOrdered: toNumberOrDefault(line.qtyOrdered ?? line.qty, 0),
-        qtyDone: toNumberOrDefault(line.qtyDone, 0),
-        uom: line.uom || 'units',
-        // Use line-level override if set, otherwise use form header values
-        fromLocationId: line.fromLocationId || fromLocationId,
-        toLocationId: line.toLocationId || toLocationId,
-      }))
-
-    saveMutation.mutate({
-      reference: formData.reference,
-      scheduledDate: formData.scheduledDate,
-      notes: formData.notes,
-      sourceDocument: formData.sourceDocument,
-      status: 'draft',
-      moveLines,
-    })
+  if (hasPartialLines) {
+    toast.error('Complete product and quantity for each line, or remove incomplete lines')
+    return
   }
 
-  const isReadOnly = status === 'done' || status === 'cancelled'
+  const moveLines = (lines || [])
+    .map((line) => ({
+      productId: getLineProductId(line),
+      qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
+      qtyDone: Number(line.qtyDone || 0),
+      uom: line.uom || 'units',
+      fromLocationId: line.fromLocationId || null,
+      toLocationId: line.toLocationId || null,
+    }))
+    .filter((line) => line.productId && line.qtyOrdered > 0)
 
-  if (fetchLoading && !isNew) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
+  saveMutation.mutate({ ...formData, moveLines })
+}
+const isReadOnly = status === 'done' || status === 'cancelled'
 
-  const locationOptions = locations.map((l) => ({
-    value: l._id || l.id,
-    label: `${l.name}${l.shortCode ? ` (${l.shortCode})` : ''}`,
-  }))
+if (fetchLoading && !isNew) return (<div className="flex justify-center py-20"><Spinner size="lg" /></div>)
 
-  return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">
-          {isNew ? 'New Transfer' : transfer?.reference || 'Transfer'}
-        </h1>
-        <div className="flex items-center gap-3">
-          {status === 'draft' && (
-            <>
-              <Button variant="secondary" onClick={() => navigate('/operations/transfers')}>Discard</Button>
-              <Button
-                onClick={handleSubmit(onSave)}
-                loading={saveMutation.isPending}
-                disabled={!!sameLocation}
-              >
-                Save
-              </Button>
-            </>
-          )}
-          {(status === 'waiting' || status === 'ready') && (
-            <>
-              <Button variant="secondary" onClick={() => setShowCancel(true)}>Cancel</Button>
-              <Button onClick={() => validateMutation.mutate()} loading={validateMutation.isPending}>
-                {status === 'ready' ? 'Mark as Done' : 'Validate'}
-              </Button>
-            </>
-          )}
-          {(status === 'done' || status === 'cancelled') && (
-            <Button variant="secondary" onClick={() => navigate('/operations/transfers')}>Back to List</Button>
-          )}
-        </div>
-      </div>
+const locationOptions = locations.map((l) => ({
+  value: l._id || l.id,
+  label: `${l.name}${l.shortCode ? ` (${l.shortCode})` : ''}`,
+}))
 
-      {/* Status Stepper */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-        <StatusStepper steps={STEPS} current={status?.charAt(0).toUpperCase() + status?.slice(1)} />
-      </div>
-
-      {/* Form Fields */}
-      <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference No *</label>
-            <input
-              {...register('reference', { required: 'Reference is required' })}
-              className="input-field"
-              placeholder="e.g. WH/INT/00001"
-              disabled={isReadOnly}
-            />
-            {errors.reference && <p className="text-xs text-red-500 mt-1">{errors.reference.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Scheduled Date</label>
-            <input type="date" {...register('scheduledDate')} className="input-field" disabled={isReadOnly} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Source Location *</label>
-            <select
-              {...register('sourceLocation', { required: 'Source location is required' })}
-              className="input-field"
-              disabled={isReadOnly}
+return (
+  <div>
+    {/* Header */}
+    <div className="flex items-center justify-between mb-6">
+      <h1 className="text-2xl font-bold text-gray-900">
+        {isNew ? 'New Transfer' : transfer?.reference || 'Transfer'}
+      </h1>
+      <div className="flex items-center gap-3">
+        {status === 'draft' && (
+          <>
+            <Button variant="secondary" onClick={() => navigate('/operations/transfers')}>Discard</Button>
+            <Button
+              onClick={handleSubmit(onSave)}
+              loading={saveMutation.isPending}
+              disabled={!!sameLocation}
             >
-              <option value="">Select source location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {errors.sourceLocation && <p className="text-xs text-red-500 mt-1">{errors.sourceLocation.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Destination Location *</label>
-            <select
-              {...register('destinationLocation', { required: 'Destination location is required' })}
-              className="input-field"
-              disabled={isReadOnly}
-            >
-              <option value="">Select destination location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            {errors.destinationLocation && <p className="text-xs text-red-500 mt-1">{errors.destinationLocation.message}</p>}
-            {sameLocation && (
-              <p className="text-xs text-red-500 mt-1">Source and destination cannot be the same location.</p>
-            )}
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
-            <textarea {...register('notes')} className="input-field" rows={2} placeholder="Optional notes..." disabled={isReadOnly} />
-          </div>
-        </div>
-      </form>
-
-      {/* Product Lines */}
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-3">Product Lines</h2>
-        <div className="text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-4 py-2 mb-3">
-          Products will be moved from <strong>Source Location → Destination Location</strong> selected above.
-        </div>
-        <LineItemTable
-          lines={lines}
-          onChange={setLines}
-          readOnly={isReadOnly}
-        />
+              Save
+            </Button>
+          </>
+        )}
+        {(status === 'waiting' || status === 'ready') && (
+          <>
+            <Button variant="secondary" onClick={() => setShowCancel(true)}>Cancel</Button>
+            <Button onClick={() => validateMutation.mutate()} loading={validateMutation.isPending}>
+              {status === 'ready' ? 'Mark as Done' : 'Validate'}
+            </Button>
+          </>
+        )}
+        {(status === 'done' || status === 'cancelled') && (
+          <Button variant="secondary" onClick={() => navigate('/operations/transfers')}>Back to List</Button>
+        )}
       </div>
+    </div>
 
-      <ConfirmDialog
-        isOpen={showCancel}
-        onClose={() => setShowCancel(false)}
-        onConfirm={() => cancelMutation.mutate()}
-        title="Cancel Transfer"
-        message="Are you sure you want to cancel this transfer? This action cannot be undone."
-        confirmLabel="Cancel Transfer"
+    {/* Status Stepper */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
+      <StatusStepper steps={STEPS} current={status?.charAt(0).toUpperCase() + status?.slice(1)} />
+    </div>
+
+    {/* Form Fields */}
+    <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Reference No *</label>
+          <input
+            {...register('reference', { required: 'Reference is required' })}
+            className="input-field"
+            placeholder="e.g. WH/INT/00001"
+            disabled={isReadOnly}
+          />
+          {errors.reference && <p className="text-xs text-red-500 mt-1">{errors.reference.message}</p>}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Scheduled Date</label>
+          <input type="date" {...register('scheduledDate')} className="input-field" disabled={isReadOnly} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Source Location *</label>
+          <select
+            {...register('sourceLocation', { required: 'Source location is required' })}
+            className="input-field"
+            disabled={isReadOnly}
+          >
+            <option value="">Select source location...</option>
+            {locationOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {errors.sourceLocation && <p className="text-xs text-red-500 mt-1">{errors.sourceLocation.message}</p>}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Destination Location *</label>
+          <select
+            {...register('destinationLocation', { required: 'Destination location is required' })}
+            className="input-field"
+            disabled={isReadOnly}
+          >
+            <option value="">Select destination location...</option>
+            {locationOptions.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          {errors.destinationLocation && <p className="text-xs text-red-500 mt-1">{errors.destinationLocation.message}</p>}
+          {sameLocation && (
+            <p className="text-xs text-red-500 mt-1">Source and destination cannot be the same location.</p>
+          )}
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+          <textarea {...register('notes')} className="input-field" rows={2} placeholder="Optional notes..." disabled={isReadOnly} />
+        </div>
+      </div>
+    </form>
+
+    {/* Product Lines */}
+    <div className="mb-6">
+      <h2 className="text-lg font-semibold text-gray-800 mb-3">Product Lines</h2>
+      <div className="text-sm text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-4 py-2 mb-3">
+        Products will be moved from <strong>Source Location → Destination Location</strong> selected above.
+      </div>
+      <LineItemTable
+        lines={lines}
+        onChange={setLines}
+        readOnly={isReadOnly}
       />
     </div>
-  )
-}
+
+    <ConfirmDialog
+      isOpen={showCancel}
+      onClose={() => setShowCancel(false)}
+      onConfirm={() => cancelMutation.mutate()}
+      title="Cancel Transfer"
+      message="Are you sure you want to cancel this transfer? This action cannot be undone."
+      confirmLabel="Cancel Transfer"
+    />
+  </div>
+)

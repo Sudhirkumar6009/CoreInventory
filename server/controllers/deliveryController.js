@@ -56,6 +56,20 @@ exports.createDelivery = async (req, res, next) => {
   try {
     const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
 
+    if (Array.isArray(moveLines) && moveLines.length > 0) {
+      const hasInvalidLine = moveLines.some((line) => {
+        const qtyOrdered = Number(line?.qtyOrdered || 0);
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+      });
+
+      if (hasInvalidLine) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each move line must include a valid product and quantity greater than zero',
+        });
+      }
+    }
+
     let reference = incomingRef?.trim();
     if (reference) {
       const exists = await StockPicking.exists({ reference });
@@ -81,7 +95,6 @@ exports.createDelivery = async (req, res, next) => {
       const lines = moveLines.map((line) => ({
         pickingId: delivery._id,
         productId: line.productId,
-        description: line.description || '',
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
@@ -153,6 +166,20 @@ exports.updateDelivery = async (req, res, next) => {
 
     const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
 
+    if (Array.isArray(moveLines) && moveLines.length > 0) {
+      const hasInvalidLine = moveLines.some((line) => {
+        const qtyOrdered = Number(line?.qtyOrdered || 0);
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+      });
+
+      if (hasInvalidLine) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each move line must include a valid product and quantity greater than zero',
+        });
+      }
+    }
+
     if (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) {
       const exists = await StockPicking.exists({ reference: incomingRef.trim() });
       if (exists) {
@@ -174,7 +201,6 @@ exports.updateDelivery = async (req, res, next) => {
       const lines = moveLines.map((line) => ({
         pickingId: delivery._id,
         productId: line.productId,
-        description: line.description || '',
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
