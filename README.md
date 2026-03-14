@@ -554,21 +554,6 @@ Planned improvements:
 
 ---
 
-<<<<<<< HEAD
-=======
-## 📚 Documentation
-
-Additional documentation is included in the repository root:
-
-| File | Description |
-|------|-------------|
-| [`CoreInventory_Frontend_Guide.txt`](./CoreInventory_Frontend_Guide.txt) | Component architecture, page structure, and UI conventions |
-| [`CoreInventory_SystemDesign.txt`](./CoreInventory_SystemDesign.txt) | Data model design, API contracts, and system architecture decisions |
-| [`CoreInventory_Mockups.pdf`](./CoreInventory_Mockups.pdf) | UI mockups and workflow diagrams |
-
----
->>>>>>> 9a0268a088c176e7be87dce958e0a4549833626d
-
 ## 📄 License
 
 This project is licensed under the **ISC License**.
