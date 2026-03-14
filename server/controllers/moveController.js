@@ -1,5 +1,30 @@
 const StockMove = require('../models/StockMove');
 
+const formatMoveForUi = (move) => {
+  const isReceipt = move.moveType === 'IN';
+  const isInternal = move.moveType === 'INTERNAL';
+
+  const fromDisplay = isReceipt
+    ? (move.pickingId?.supplierOrCustomer || 'Vendor')
+    : (move.fromLocationId?.name || '--');
+
+  const toDisplay = isReceipt
+    ? '--'
+    : isInternal
+      ? (move.toLocationId?.name || '--')
+      : (move.toLocationId?.name || '--');
+
+  return {
+    ...move,
+    productName: move.productId?.name || '--',
+    product: move.productId || null,
+    fromLocation: move.fromLocationId || null,
+    toLocation: move.toLocationId || null,
+    fromDisplay,
+    toDisplay,
+  };
+};
+
 /**
  * @desc    Get all stock moves (ledger)
  * @route   GET /api/moves
@@ -36,7 +61,7 @@ exports.getMoves = async (req, res, next) => {
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
-      .populate('pickingId', 'reference pickingType')
+      .populate('pickingId', 'reference pickingType supplierOrCustomer')
       .populate('adjustmentId', 'reference')
       .populate('createdBy', 'name email')
       .sort(sort)
@@ -44,9 +69,11 @@ exports.getMoves = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
+    const normalizedMoves = moves.map(formatMoveForUi);
+
     res.json({
       success: true,
-      data: moves,
+      data: normalizedMoves,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -70,7 +97,7 @@ exports.getMove = async (req, res, next) => {
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
-      .populate('pickingId', 'reference pickingType status')
+      .populate('pickingId', 'reference pickingType status supplierOrCustomer')
       .populate('adjustmentId', 'reference')
       .populate('createdBy', 'name email');
 
@@ -78,7 +105,7 @@ exports.getMove = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Stock move not found' });
     }
 
-    res.json({ success: true, data: move });
+    res.json({ success: true, data: formatMoveForUi(move.toObject()) });
   } catch (error) {
     next(error);
   }

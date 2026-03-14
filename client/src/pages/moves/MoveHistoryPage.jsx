@@ -30,9 +30,9 @@ export default function MoveHistoryPage() {
   const columns = [
     { key: 'date', label: 'Date', render: (r) => formatDate(r.date || r.createdAt) },
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
-    { key: 'product', label: 'Product', render: (r) => r.product?.name || r.productName || '--' },
-    { key: 'fromLocation', label: 'From', render: (r) => r.fromLocation?.name || r.fromLocation || '--' },
-    { key: 'toLocation', label: 'To', render: (r) => r.toLocation?.name || r.toLocation || '--' },
+    { key: 'product', label: 'Product', render: (r) => r.productName || r.product?.name || '--' },
+    { key: 'fromLocation', label: 'From', render: (r) => r.fromDisplay || r.fromLocation?.name || r.fromLocation || '--' },
+    { key: 'toLocation', label: 'To', render: (r) => r.toDisplay || r.toLocation?.name || r.toLocation || '--' },
     { key: 'quantity', label: 'Quantity', render: (r) => <span className="font-medium">{r.quantity} {r.uom || ''}</span> },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
   ]
@@ -65,9 +65,9 @@ export default function MoveHistoryPage() {
             {[
               ['Reference', selectedMove.reference],
               ['Date', formatDateTime(selectedMove.date || selectedMove.createdAt)],
-              ['Product', selectedMove.product?.name || selectedMove.productName],
-              ['From', selectedMove.fromLocation?.name || selectedMove.fromLocation],
-              ['To', selectedMove.toLocation?.name || selectedMove.toLocation],
+              ['Product', selectedMove.productName || selectedMove.product?.name],
+              ['From', selectedMove.fromDisplay || selectedMove.fromLocation?.name || selectedMove.fromLocation],
+              ['To', selectedMove.toDisplay || selectedMove.toLocation?.name || selectedMove.toLocation],
               ['Quantity', `${selectedMove.quantity} ${selectedMove.uom || ''}`],
               ['Move Type', selectedMove.moveType || selectedMove.type],
               ['Status', selectedMove.status],
