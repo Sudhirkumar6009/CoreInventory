@@ -60,7 +60,6 @@ export default function ReceiptFormPage() {
         reference: receipt.reference,
         responsibleUser: receipt.createdBy?.email || currentUser?.email || '',
         scheduledDate: receipt.scheduledDate?.split('T')[0],
-        sourceDocument: receipt.sourceDocument,
       })
       setLines(normalizeLines(receipt.moveLines || receipt.lines || receipt.items || []))
       setStatus(receipt.status || 'draft')
@@ -69,7 +68,6 @@ export default function ReceiptFormPage() {
         reference: previewRef('IN'),
         responsibleUser: currentUser?.email || '',
         scheduledDate: '',
-        sourceDocument: '',
       })
     }
   }, [receipt, isNew, reset, currentUser?.email])
@@ -151,7 +149,6 @@ export default function ReceiptFormPage() {
     const payload = {
       reference: formData.reference,
       scheduledDate: formData.scheduledDate,
-      sourceDocument: formData.sourceDocument,
       status: 'draft',
       moveLines,
     }
@@ -230,10 +227,6 @@ export default function ReceiptFormPage() {
               className="input-field" disabled={isReadOnly}
             />
             {errors.scheduledDate && <p className="text-xs text-red-500 mt-1">{errors.scheduledDate.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Source Document</label>
-            <input {...register('sourceDocument')} className="input-field" placeholder="PO number" disabled={isReadOnly} />
           </div>
         </div>
       </form>

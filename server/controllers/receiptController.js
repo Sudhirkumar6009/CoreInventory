@@ -19,7 +19,6 @@ exports.getReceipts = async (req, res, next) => {
     if (search) {
       filter.$or = [
         { reference: { $regex: search, $options: 'i' } },
-        { sourceDocument: { $regex: search, $options: 'i' } },
       ];
     }
     if (dateFrom || dateTo) {
@@ -58,7 +57,7 @@ exports.getReceipts = async (req, res, next) => {
  */
 exports.createReceipt = async (req, res, next) => {
   try {
-    const { reference: incomingRef, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -88,7 +87,6 @@ exports.createReceipt = async (req, res, next) => {
       reference,
       pickingType: 'IN',
       scheduledDate,
-      sourceDocument,
       notes,
       status: 'draft',
       createdBy: req.user._id,
@@ -178,7 +176,7 @@ exports.updateReceipt = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Cannot edit a cancelled receipt' });
     }
 
-    const { reference: incomingRef, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -203,7 +201,6 @@ exports.updateReceipt = async (req, res, next) => {
     }
 
     if (scheduledDate !== undefined) receipt.scheduledDate = scheduledDate;
-    if (sourceDocument !== undefined) receipt.sourceDocument = sourceDocument;
     if (notes !== undefined) receipt.notes = notes;
     if (status) receipt.status = status;
 
@@ -400,7 +397,6 @@ exports.returnReceipt = async (req, res, next) => {
           reference: returnRef,
           pickingType: 'OUT',
           supplierOrCustomer: receipt.supplierOrCustomer,
-          sourceDocument: receipt.reference,
           status: 'done',
           notes: `Return for ${receipt.reference}`,
           createdBy: req.user._id,

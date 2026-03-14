@@ -58,12 +58,11 @@ export default function DeliveryFormPage() {
         customer: delivery.customer,
         scheduledDate: delivery.scheduledDate?.split('T')[0],
         carrier: delivery.carrier,
-        sourceDocument: delivery.sourceDocument,
       })
       setLines(normalizeLines(delivery.moveLines || delivery.lines || delivery.items || []))
       setStatus(delivery.status || 'draft')
     } else if (isNew) {
-      reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '', sourceDocument: '' })
+      reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '' })
     }
   }, [delivery, isNew, reset])
 
@@ -189,10 +188,6 @@ export default function DeliveryFormPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Carrier</label>
             <input {...register('carrier')} className="input-field" placeholder="Carrier name" disabled={isReadOnly} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Source Document</label>
-            <input {...register('sourceDocument')} className="input-field" placeholder="Sales Order ref" disabled={isReadOnly} />
           </div>
         </div>
       </form>

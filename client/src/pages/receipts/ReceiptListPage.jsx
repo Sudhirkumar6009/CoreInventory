@@ -35,7 +35,6 @@ export default function ReceiptListPage() {
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
     { key: 'supplier', label: 'Supplier', render: (r) => r.supplier || r.supplierOrCustomer || '--' },
     { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
-    { key: 'sourceDocument', label: 'Source Doc', render: (r) => r.sourceDocument || '--' },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
   ]
 

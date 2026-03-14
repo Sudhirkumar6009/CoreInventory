@@ -20,7 +20,6 @@ exports.getDeliveries = async (req, res, next) => {
       filter.$or = [
         { reference: { $regex: search, $options: 'i' } },
         { supplierOrCustomer: { $regex: search, $options: 'i' } },
-        { sourceDocument: { $regex: search, $options: 'i' } },
       ];
     }
     if (dateFrom || dateTo) {
@@ -54,7 +53,7 @@ exports.getDeliveries = async (req, res, next) => {
  */
 exports.createDelivery = async (req, res, next) => {
   try {
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -85,7 +84,6 @@ exports.createDelivery = async (req, res, next) => {
       pickingType: 'OUT',
       supplierOrCustomer,
       scheduledDate,
-      sourceDocument,
       notes,
       status: 'draft',
       createdBy: req.user._id,
@@ -164,7 +162,7 @@ exports.updateDelivery = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Cannot edit a ${delivery.status} delivery` });
     }
 
-    const { reference: incomingRef, supplierOrCustomer, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, status, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -190,7 +188,6 @@ exports.updateDelivery = async (req, res, next) => {
 
     if (supplierOrCustomer !== undefined) delivery.supplierOrCustomer = supplierOrCustomer;
     if (scheduledDate !== undefined) delivery.scheduledDate = scheduledDate;
-    if (sourceDocument !== undefined) delivery.sourceDocument = sourceDocument;
     if (notes !== undefined) delivery.notes = notes;
     if (status) delivery.status = status;
 
@@ -394,7 +391,6 @@ exports.returnDelivery = async (req, res, next) => {
           reference: returnRef,
           pickingType: 'IN',
           supplierOrCustomer: delivery.supplierOrCustomer,
-          sourceDocument: delivery.reference,
           status: 'done',
           notes: `Return for ${delivery.reference}`,
           createdBy: req.user._id,
