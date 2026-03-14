@@ -33,12 +33,12 @@ export default function TransferFormPage() {
 
   const { data: locations } = useQuery({
     queryKey: ['locations'],
-    queryFn: () => warehouseService.getLocations().then((r) => r.data?.locations || r.data || []),
+    queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || r.data?.locations || r.data || []),
   })
 
   const { data: transfer, isLoading: fetchLoading } = useQuery({
     queryKey: ['transfer', id],
-    queryFn: () => transferService.getById(id).then((r) => r.data),
+    queryFn: () => transferService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   })
 
@@ -62,7 +62,8 @@ export default function TransferFormPage() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['transfers'] })
       toast.success('Transfer saved')
-      if (isNew) navigate(`/operations/transfers/${res.data?._id || res.data?.id}`, { replace: true })
+      const created = res.data?.data || res.data
+      if (isNew) navigate(`/operations/transfers/${created?._id || created?.id}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
   })

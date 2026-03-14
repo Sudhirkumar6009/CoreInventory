@@ -17,14 +17,20 @@ export default function DeliveryListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['deliveries', filters],
-    queryFn: () => deliveryService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => deliveryService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.deliveries || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
   const columns = [
     { key: 'date', label: 'Date', render: (r) => formatDate(r.scheduledDate || r.date || r.createdAt) },
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
-    { key: 'customer', label: 'Customer' },
+    { key: 'customer', label: 'Customer', render: (r) => r.customer || r.supplierOrCustomer || '--' },
     { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
     { key: 'sourceDocument', label: 'Source Doc', render: (r) => r.sourceDocument || '--' },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
@@ -34,7 +40,7 @@ export default function DeliveryListPage() {
     setFilters((f) => ({ ...f, search, page: 1 }))
   }, [])
 
-  const items = data?.deliveries || data?.items || []
+  const items = data?.items || []
   const totalPages = data?.totalPages || 1
 
   return (

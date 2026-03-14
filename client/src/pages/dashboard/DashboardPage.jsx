@@ -14,15 +14,17 @@ export default function DashboardPage() {
 
   const { data: kpis, isLoading: kpiLoading } = useQuery({
     queryKey: ['dashboard-kpis'],
-    queryFn: () => dashboardService.getKpis().then((r) => r.data),
+    queryFn: () => dashboardService.getKpis().then((r) => r.data?.data || r.data),
     refetchInterval: 60_000,
   })
 
   const { data: ops, isLoading: opsLoading } = useQuery({
     queryKey: ['dashboard-ops'],
-    queryFn: () => dashboardService.getOperationsSummary().then((r) => r.data),
+    queryFn: () => dashboardService.getOperationsSummary().then((r) => r.data?.data || r.data),
     refetchInterval: 60_000,
   })
+
+  const pendingCount = (summary = {}) => (summary.draft || 0) + (summary.waiting || 0) + (summary.ready || 0)
 
   const kpiCards = [
     {
@@ -34,8 +36,8 @@ export default function DashboardPage() {
     },
     {
       title: 'Low / Out of Stock',
-      value: kpis?.lowStock ?? 0,
-      subValue: kpis?.outOfStock ? `${kpis.outOfStock} out of stock` : undefined,
+      value: (kpis?.lowStockCount || 0) + (kpis?.outOfStockCount || 0),
+      subValue: kpis?.outOfStockCount ? `${kpis.outOfStockCount} out of stock` : undefined,
       icon: ExclamationTriangleIcon,
       colorClass: 'border-amber-500',
       onClick: () => navigate('/products?filter=lowStock'),
@@ -56,7 +58,7 @@ export default function DashboardPage() {
     },
     {
       title: 'Transfers Scheduled',
-      value: kpis?.scheduledTransfers ?? 0,
+      value: kpis?.pendingTransfers ?? 0,
       icon: ArrowsRightLeftIcon,
       colorClass: 'border-teal-500',
       onClick: () => navigate('/operations/transfers'),
@@ -97,8 +99,8 @@ export default function DashboardPage() {
           ) : (
             <>
               <p className="text-sm text-gray-600">
-                <span className="text-xl font-bold text-indigo-600 mr-1">{ops?.receipts?.toReceive ?? 0}</span>
-                To Receive
+                <span className="text-xl font-bold text-indigo-600 mr-1">{pendingCount(ops?.receipts)}</span>
+                Pending
               </p>
               <p className="text-sm text-gray-500 mt-1">
                 <span className="font-semibold text-amber-500 mr-1">{ops?.receipts?.waiting ?? 0}</span>
@@ -128,8 +130,8 @@ export default function DashboardPage() {
           ) : (
             <>
               <p className="text-sm text-gray-600">
-                <span className="text-xl font-bold text-orange-600 mr-1">{ops?.deliveries?.toDeliver ?? 0}</span>
-                To Deliver
+                <span className="text-xl font-bold text-orange-600 mr-1">{pendingCount(ops?.deliveries)}</span>
+                Pending
               </p>
               <p className="text-sm text-gray-500 mt-1">
                 <span className="font-semibold text-amber-500 mr-1">{ops?.deliveries?.waiting ?? 0}</span>

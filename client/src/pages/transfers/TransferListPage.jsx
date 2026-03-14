@@ -16,7 +16,13 @@ export default function TransferListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['transfers', filters],
-    queryFn: () => transferService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => transferService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.transfers || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
@@ -29,7 +35,7 @@ export default function TransferListPage() {
   ]
 
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
-  const items = data?.transfers || data?.items || []
+  const items = data?.items || []
 
   return (
     <div>

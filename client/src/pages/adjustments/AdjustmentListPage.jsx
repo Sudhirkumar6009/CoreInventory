@@ -16,7 +16,13 @@ export default function AdjustmentListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['adjustments', filters],
-    queryFn: () => adjustmentService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => adjustmentService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.adjustments || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
@@ -28,7 +34,7 @@ export default function AdjustmentListPage() {
   ]
 
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
-  const items = data?.adjustments || data?.items || []
+  const items = data?.items || []
 
   return (
     <div>

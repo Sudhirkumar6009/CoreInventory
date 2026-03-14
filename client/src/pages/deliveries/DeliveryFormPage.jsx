@@ -28,7 +28,7 @@ export default function DeliveryFormPage() {
 
   const { data: delivery, isLoading: fetchLoading } = useQuery({
     queryKey: ['delivery', id],
-    queryFn: () => deliveryService.getById(id).then((r) => r.data),
+    queryFn: () => deliveryService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   })
 
@@ -53,7 +53,8 @@ export default function DeliveryFormPage() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['deliveries'] })
       toast.success('Delivery saved')
-      const newId = res.data?._id || res.data?.id || id
+      const created = res.data?.data || res.data
+      const newId = created?._id || created?.id || id
       if (isNew) navigate(`/operations/deliveries/${newId}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),

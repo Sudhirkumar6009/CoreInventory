@@ -29,12 +29,12 @@ export default function AdjustmentFormPage() {
 
   const { data: locations } = useQuery({
     queryKey: ['locations'],
-    queryFn: () => warehouseService.getLocations().then((r) => r.data?.locations || r.data || []),
+    queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || r.data?.locations || r.data || []),
   })
 
   const { data: adjustment, isLoading: fetchLoading } = useQuery({
     queryKey: ['adjustment', id],
-    queryFn: () => adjustmentService.getById(id).then((r) => r.data),
+    queryFn: () => adjustmentService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   })
 
@@ -57,7 +57,8 @@ export default function AdjustmentFormPage() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] })
       toast.success('Adjustment saved')
-      if (isNew) navigate(`/operations/adjustments/${res.data?._id || res.data?.id}`, { replace: true })
+      const created = res.data?.data || res.data
+      if (isNew) navigate(`/operations/adjustments/${created?._id || created?.id}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
   })

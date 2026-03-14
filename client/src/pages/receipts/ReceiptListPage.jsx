@@ -18,14 +18,20 @@ export default function ReceiptListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['receipts', filters],
-    queryFn: () => receiptService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => receiptService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.receipts || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
   const columns = [
     { key: 'date', label: 'Date', render: (r) => formatDate(r.scheduledDate || r.date || r.createdAt) },
     { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
-    { key: 'supplier', label: 'Supplier' },
+    { key: 'supplier', label: 'Supplier', render: (r) => r.supplier || r.supplierOrCustomer || '--' },
     { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
     { key: 'sourceDocument', label: 'Source Doc', render: (r) => r.sourceDocument || '--' },
     { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
@@ -35,7 +41,7 @@ export default function ReceiptListPage() {
     setFilters((f) => ({ ...f, search, page: 1 }))
   }, [])
 
-  const items = data?.receipts || data?.items || []
+  const items = data?.items || []
   const totalPages = data?.totalPages || 1
 
   return (
@@ -87,7 +93,7 @@ function KanbanView({ items, onCardClick }) {
                 className="bg-white rounded-lg p-3 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition-all"
               >
                 <p className="text-sm font-medium text-gray-900">{item.reference}</p>
-                <p className="text-xs text-gray-500 mt-1">{item.supplier || item.customer || '--'}</p>
+                <p className="text-xs text-gray-500 mt-1">{item.supplier || item.customer || item.supplierOrCustomer || '--'}</p>
                 <p className="text-xs text-gray-400 mt-1">{formatDate(item.scheduledDate)}</p>
               </div>
             ))}

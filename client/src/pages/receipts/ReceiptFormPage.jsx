@@ -29,7 +29,7 @@ export default function ReceiptFormPage() {
   // Fetch existing receipt
   const { data: receipt, isLoading: fetchLoading } = useQuery({
     queryKey: ['receipt', id],
-    queryFn: () => receiptService.getById(id).then((r) => r.data),
+    queryFn: () => receiptService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   })
 
@@ -53,7 +53,8 @@ export default function ReceiptFormPage() {
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['receipts'] })
       toast.success('Receipt saved')
-      const newId = res.data?._id || res.data?.id || id
+      const created = res.data?.data || res.data
+      const newId = created?._id || created?.id || id
       if (isNew) navigate(`/operations/receipts/${newId}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),

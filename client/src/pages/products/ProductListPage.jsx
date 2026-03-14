@@ -17,7 +17,13 @@ export default function ProductListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['products', filters],
-    queryFn: () => productService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => productService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.products || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
@@ -51,7 +57,7 @@ export default function ProductListPage() {
   ]
 
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
-  const items = data?.products || data?.items || []
+  const items = data?.items || []
 
   return (
     <div>

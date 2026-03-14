@@ -78,7 +78,7 @@ function LineRow({ line, readOnly, onUpdate, onRemove }) {
     if (debounced.length >= 2) {
       productService.getAll({ search: debounced, limit: 5 })
         .then((res) => {
-          setResults(res.data?.products || res.data?.items || [])
+          setResults(res.data?.data || res.data?.products || res.data?.items || [])
           setShowDropdown(true)
         })
         .catch(() => setResults([]))

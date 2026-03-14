@@ -17,7 +17,13 @@ export default function MoveHistoryPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['moves', filters],
-    queryFn: () => moveService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    queryFn: () => moveService.getAll({ ...filters, limit: 20 }).then((r) => {
+      const payload = r.data || {}
+      return {
+        items: payload.data || payload.moves || payload.items || [],
+        totalPages: payload.pagination?.pages || payload.totalPages || 1,
+      }
+    }),
     placeholderData: keepPreviousData,
   })
 
@@ -32,7 +38,7 @@ export default function MoveHistoryPage() {
   ]
 
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
-  const items = data?.moves || data?.items || []
+  const items = data?.items || []
 
   const typeFilter = (
     <select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value, page: 1 }))}

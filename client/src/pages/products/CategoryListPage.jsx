@@ -19,7 +19,7 @@ export default function CategoryListPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => productService.getCategories().then((r) => r.data?.categories || r.data || []),
+    queryFn: () => productService.getCategories().then((r) => r.data?.data || r.data?.categories || r.data || []),
   })
 
   const saveMutation = useMutation({

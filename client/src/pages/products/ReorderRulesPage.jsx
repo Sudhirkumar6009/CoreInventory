@@ -16,25 +16,41 @@ export default function ReorderRulesPage() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showDelete, setShowDelete] = useState(null)
-  const [formData, setFormData] = useState({ product: '', warehouse: '', minQty: 0, maxQty: 0, leadTimeDays: 0 })
+  const [formData, setFormData] = useState({ productId: '', warehouseId: '', minQty: 0, maxQty: 0, leadTimeDays: 0 })
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ['reorder-rules'],
-    queryFn: () => productService.getReorderRules().then((r) => r.data?.rules || r.data || []),
+    queryFn: () => productService.getReorderRules().then((r) => {
+      const items = r.data?.data || r.data?.rules || r.data || []
+      return items.map((rule) => ({
+        ...rule,
+        product: rule.product || rule.productId,
+        warehouse: rule.warehouse || rule.warehouseId,
+      }))
+    }),
   })
 
   const { data: products } = useQuery({
     queryKey: ['products-list'],
-    queryFn: () => productService.getAll({ limit: 100 }).then((r) => r.data?.products || r.data?.items || []),
+    queryFn: () => productService.getAll({ limit: 100 }).then((r) => r.data?.data || r.data?.products || r.data?.items || []),
   })
 
   const { data: warehouses } = useQuery({
     queryKey: ['warehouses'],
-    queryFn: () => warehouseService.getAll().then((r) => r.data?.warehouses || r.data || []),
+    queryFn: () => warehouseService.getAll().then((r) => r.data?.data || r.data?.warehouses || r.data || []),
   })
 
   const saveMutation = useMutation({
-    mutationFn: (d) => editing ? productService.updateReorderRule(editing._id || editing.id, d) : productService.createReorderRule(d),
+    mutationFn: (d) => {
+      const payload = {
+        productId: d.productId,
+        warehouseId: d.warehouseId,
+        minQty: d.minQty,
+        maxQty: d.maxQty,
+        leadTimeDays: d.leadTimeDays,
+      }
+      return editing ? productService.updateReorderRule(editing._id || editing.id, payload) : productService.createReorderRule(payload)
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['reorder-rules'] }); toast.success('Rule saved'); closeForm() },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
   })
@@ -44,8 +60,8 @@ export default function ReorderRulesPage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['reorder-rules'] }); toast.success('Rule deleted'); setShowDelete(null) },
   })
 
-  const openNew = () => { setEditing(null); setFormData({ product: '', warehouse: '', minQty: 0, maxQty: 0, leadTimeDays: 0 }); setShowForm(true) }
-  const openEdit = (rule) => { setEditing(rule); setFormData({ product: rule.product?._id || rule.product, warehouse: rule.warehouse?._id || rule.warehouse, minQty: rule.minQty, maxQty: rule.maxQty, leadTimeDays: rule.leadTimeDays }); setShowForm(true) }
+  const openNew = () => { setEditing(null); setFormData({ productId: '', warehouseId: '', minQty: 0, maxQty: 0, leadTimeDays: 0 }); setShowForm(true) }
+  const openEdit = (rule) => { setEditing(rule); setFormData({ productId: rule.product?._id || rule.product, warehouseId: rule.warehouse?._id || rule.warehouse, minQty: rule.minQty, maxQty: rule.maxQty, leadTimeDays: rule.leadTimeDays }); setShowForm(true) }
   const closeForm = () => { setShowForm(false); setEditing(null) }
 
   const columns = [
@@ -76,14 +92,14 @@ export default function ReorderRulesPage() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Product</label>
-            <select value={formData.product} onChange={(e) => setFormData({ ...formData, product: e.target.value })} className="input-field">
+            <select value={formData.productId} onChange={(e) => setFormData({ ...formData, productId: e.target.value })} className="input-field">
               <option value="">Select product...</option>
               {(products || []).map((p) => <option key={p._id || p.id} value={p._id || p.id}>{p.name}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Warehouse</label>
-            <select value={formData.warehouse} onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })} className="input-field">
+            <select value={formData.warehouseId} onChange={(e) => setFormData({ ...formData, warehouseId: e.target.value })} className="input-field">
               <option value="">Select warehouse...</option>
               {(warehouses || []).map((w) => <option key={w._id || w.id} value={w._id || w.id}>{w.name}</option>)}
             </select>

@@ -20,13 +20,13 @@ export default function ProductFormPage() {
 
   const { data: product, isLoading } = useQuery({
     queryKey: ['product', id],
-    queryFn: () => productService.getById(id).then((r) => r.data),
+    queryFn: () => productService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
   })
 
   const { data: categories } = useQuery({
     queryKey: ['categories'],
-    queryFn: () => productService.getCategories().then((r) => r.data?.categories || r.data || []),
+    queryFn: () => productService.getCategories().then((r) => r.data?.data || []),
   })
 
   useEffect(() => {
