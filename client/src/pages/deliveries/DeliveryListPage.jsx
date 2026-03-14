@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { deliveryService } from '../../api/deliveryService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import FilterBar from '../../components/common/FilterBar'
 import Table from '../../components/common/Table'
 import Pagination from '../../components/common/Pagination'
@@ -12,6 +13,7 @@ import { formatDate } from '../../utils/formatDate'
 export default function DeliveryListPage() {
   useDocumentTitle('Deliveries')
   const navigate = useNavigate()
+  const { isManager } = useRole()
   const [filters, setFilters] = useState({ status: '', search: '', page: 1 })
   const [viewMode, setViewMode] = useState('list')
 
@@ -49,6 +51,7 @@ export default function DeliveryListPage() {
       <FilterBar
         module="deliveries"
         newPath="/operations/deliveries/new"
+        hideNew={!isManager}
         onSearch={handleSearch}
         statusFilter={filters.status}
         onStatusChange={(s) => setFilters((f) => ({ ...f, status: s, page: 1 }))}

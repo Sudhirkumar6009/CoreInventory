@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
+import toast from 'react-hot-toast'
 
 // Layouts
 import AuthLayout from './layouts/AuthLayout'
@@ -41,6 +42,20 @@ function PrivateRoute({ children }) {
   return children
 }
 
+/**
+ * RoleGuard – restricts a route to users whose role is in `allowedRoles`.
+ * Unauthorized users are redirected to /dashboard with an informative toast.
+ */
+function RoleGuard({ children, allowedRoles }) {
+  const user = useAuthStore((s) => s.user)
+  const role = user?.role || 'staff'
+  if (!allowedRoles.includes(role)) {
+    toast.error('Access denied. This section is for Inventory Managers only.', { id: 'role-guard' })
+    return <Navigate to="/dashboard" replace />
+  }
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -63,39 +78,39 @@ export default function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
 
-          {/* Products */}
-          <Route path="/products" element={<ProductListPage />} />
-          <Route path="/products/new" element={<ProductFormPage />} />
-          <Route path="/products/:id/edit" element={<ProductFormPage />} />
-          <Route path="/products/categories" element={<CategoryListPage />} />
-          <Route path="/products/reorder-rules" element={<ReorderRulesPage />} />
+          {/* ── Manager only: Product Catalogue ── */}
+          <Route path="/products" element={<RoleGuard allowedRoles={['manager']}><ProductListPage /></RoleGuard>} />
+          <Route path="/products/new" element={<RoleGuard allowedRoles={['manager']}><ProductFormPage /></RoleGuard>} />
+          <Route path="/products/:id/edit" element={<RoleGuard allowedRoles={['manager']}><ProductFormPage /></RoleGuard>} />
+          <Route path="/products/categories" element={<RoleGuard allowedRoles={['manager']}><CategoryListPage /></RoleGuard>} />
+          <Route path="/products/reorder-rules" element={<RoleGuard allowedRoles={['manager']}><ReorderRulesPage /></RoleGuard>} />
 
-          {/* Receipts */}
-          <Route path="/operations/receipts" element={<ReceiptListPage />} />
-          <Route path="/operations/receipts/new" element={<ReceiptFormPage />} />
-          <Route path="/operations/receipts/:id" element={<ReceiptFormPage />} />
+          {/* ── Manager only: Incoming Stock (Receipts) ── */}
+          <Route path="/operations/receipts" element={<RoleGuard allowedRoles={['manager']}><ReceiptListPage /></RoleGuard>} />
+          <Route path="/operations/receipts/new" element={<RoleGuard allowedRoles={['manager']}><ReceiptFormPage /></RoleGuard>} />
+          <Route path="/operations/receipts/:id" element={<RoleGuard allowedRoles={['manager']}><ReceiptFormPage /></RoleGuard>} />
 
-          {/* Deliveries */}
-          <Route path="/operations/deliveries" element={<DeliveryListPage />} />
-          <Route path="/operations/deliveries/new" element={<DeliveryFormPage />} />
-          <Route path="/operations/deliveries/:id" element={<DeliveryFormPage />} />
+          {/* ── Manager only: Outgoing Stock (Deliveries) ── */}
+          <Route path="/operations/deliveries" element={<RoleGuard allowedRoles={['manager']}><DeliveryListPage /></RoleGuard>} />
+          <Route path="/operations/deliveries/new" element={<RoleGuard allowedRoles={['manager']}><DeliveryFormPage /></RoleGuard>} />
+          <Route path="/operations/deliveries/:id" element={<RoleGuard allowedRoles={['manager']}><DeliveryFormPage /></RoleGuard>} />
 
-          {/* Internal Transfers */}
+          {/* ── Both roles: Transfers (picking, shelving, counting) ── */}
           <Route path="/operations/transfers" element={<TransferListPage />} />
           <Route path="/operations/transfers/new" element={<TransferFormPage />} />
           <Route path="/operations/transfers/:id" element={<TransferFormPage />} />
 
-          {/* Adjustments */}
+          {/* ── Both roles: Adjustments (stock counting) ── */}
           <Route path="/operations/adjustments" element={<AdjustmentListPage />} />
           <Route path="/operations/adjustments/new" element={<AdjustmentFormPage />} />
           <Route path="/operations/adjustments/:id" element={<AdjustmentFormPage />} />
 
-          {/* Move History */}
+          {/* ── Both roles: Move History (read-only audit log) ── */}
           <Route path="/operations/moves" element={<MoveHistoryPage />} />
 
-          {/* Settings */}
-          <Route path="/settings/warehouses" element={<WarehouseSettingsPage />} />
-          <Route path="/settings/locations" element={<LocationSettingsPage />} />
+          {/* ── Manager only: Settings ── */}
+          <Route path="/settings/warehouses" element={<RoleGuard allowedRoles={['manager']}><WarehouseSettingsPage /></RoleGuard>} />
+          <Route path="/settings/locations" element={<RoleGuard allowedRoles={['manager']}><LocationSettingsPage /></RoleGuard>} />
         </Route>
 
         {/* Catch-all */}

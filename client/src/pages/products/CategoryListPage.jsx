@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '../../api/productService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import Table from '../../components/common/Table'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
@@ -12,6 +13,7 @@ import toast from 'react-hot-toast'
 export default function CategoryListPage() {
   useDocumentTitle('Categories')
   const queryClient = useQueryClient()
+  const { isManager } = useRole()
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showDelete, setShowDelete] = useState(null)
@@ -52,12 +54,12 @@ export default function CategoryListPage() {
     { key: 'description', label: 'Description', render: (r) => r.description || '--' },
     { key: 'productCount', label: '# Products', render: (r) => r.productCount ?? '--' },
     {
-      key: 'actions', label: '', render: (r) => (
+      key: 'actions', label: '', render: (r) => isManager ? (
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); openEdit(r) }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"><PencilIcon className="w-4 h-4" /></button>
           <button onClick={(e) => { e.stopPropagation(); setShowDelete(r) }} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4" /></button>
         </div>
-      ),
+      ) : null,
     },
   ]
 
@@ -65,7 +67,7 @@ export default function CategoryListPage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold text-gray-900">Categories</h1>
-        <Button onClick={openNew}><PlusIcon className="w-4 h-4" /> New Category</Button>
+        {isManager && <Button onClick={openNew}><PlusIcon className="w-4 h-4" /> New Category</Button>}
       </div>
       <Table columns={columns} data={data || []} loading={isLoading} emptyMessage="No categories found." />
 

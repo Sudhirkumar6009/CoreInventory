@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Bars3Icon, BellIcon, MagnifyingGlassIcon, ChevronDownIcon } from '@heroicons/react/24/outline'
 import { useUiStore } from '../../store/uiStore'
 import { useAuthStore } from '../../store/authStore'
+import { useRole } from '../../hooks/useRole'
 import { NAV_ITEMS } from '../../constants'
 import clsx from 'clsx'
 
@@ -12,6 +13,7 @@ export default function TopNav() {
   const { toggleSidebar } = useUiStore()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const { role } = useRole()
   const [openDropdown, setOpenDropdown] = useState(null)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const dropdownRef = useRef(null)
@@ -31,6 +33,23 @@ export default function TopNav() {
     if (item.path) return location.pathname.startsWith(item.path)
     return item.children?.some((c) => location.pathname.startsWith(c.path))
   }
+
+  /** Filter a top-level nav item and its children by the current user's role. */
+  const filterByRole = (item) => {
+    // If the parent itself is role-restricted and user doesn't qualify, hide entirely
+    if (item.roles && !item.roles.includes(role)) return null
+
+    if (!item.children) return item
+
+    // Filter children individually (e.g. Operations has mixed-role children)
+    const visibleChildren = item.children.filter(
+      (c) => !c.roles || c.roles.includes(role)
+    )
+    if (visibleChildren.length === 0) return null
+    return { ...item, children: visibleChildren }
+  }
+
+  const visibleNavItems = NAV_ITEMS.map(filterByRole).filter(Boolean)
 
   return (
     <nav className="bg-gradient-to-r from-brand-dark to-brand-mid text-white shadow-lg z-20 flex-shrink-0">
@@ -54,9 +73,9 @@ export default function TopNav() {
             </Link>
           </div>
 
-          {/* Center: Nav links */}
+          {/* Center: Role-filtered Nav links */}
           <div className="flex items-center gap-1 flex-1">
-            {NAV_ITEMS.map((item) => (
+            {visibleNavItems.map((item) => (
               <div key={item.label} className="relative">
                 {item.children ? (
                   <>
@@ -104,8 +123,18 @@ export default function TopNav() {
             ))}
           </div>
 
-          {/* Right: Search, Bell, Avatar */}
+          {/* Right: Role badge, Search, Bell, Avatar */}
           <div className="flex items-center gap-2">
+            {/* Role indicator badge */}
+            <span className={clsx(
+              'hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold',
+              role === 'manager'
+                ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/30'
+                : 'bg-blue-400/20 text-blue-200 border border-blue-400/30'
+            )}>
+              {role === 'manager' ? '🏷 Manager' : '📦 Staff'}
+            </span>
+
             <button className="p-2 rounded-lg hover:bg-white/10 transition-colors">
               <MagnifyingGlassIcon className="w-5 h-5" />
             </button>
@@ -123,10 +152,16 @@ export default function TopNav() {
                 </div>
               </button>
               {showUserMenu && (
-                <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 animate-scale-in z-50">
+                <div className="absolute top-full right-0 mt-1 w-52 bg-white rounded-xl shadow-xl border border-gray-100 py-1.5 animate-scale-in z-50">
                   <div className="px-4 py-2.5 border-b border-gray-100">
                     <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
                     <p className="text-xs text-gray-500">{user?.email || ''}</p>
+                    <span className={clsx(
+                      'mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium capitalize',
+                      role === 'manager' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'
+                    )}>
+                      {role}
+                    </span>
                   </div>
                   <button
                     onClick={() => {

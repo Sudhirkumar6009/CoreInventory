@@ -44,7 +44,7 @@ exports.register = async (req, res, next) => {
       name,
       email,
       passwordHash: password, // Will be hashed by pre-save hook
-      role: role || 'staff',
+      role: role ? role.toLowerCase() : 'staff',
       isActive: false,
     });
 
