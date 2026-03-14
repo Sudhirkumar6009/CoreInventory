@@ -14,6 +14,40 @@ import toast from 'react-hot-toast'
 
 const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
 
+const toNumberOrDefault = (value, fallback = 0) => {
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+const normalizeLineFromApi = (line = {}) => {
+  const productObj = typeof line.productId === 'object' ? line.productId : null
+  const qtyOrdered = toNumberOrDefault(line.qtyOrdered ?? line.qty, 0)
+  return {
+    id: line._id || line.id || crypto.randomUUID(),
+    productId: productObj?._id || line.productId || '',
+    productName: line.productName || productObj?.name || '',
+    description: line.description || '',
+    qty: qtyOrdered,
+    qtyOrdered,
+    qtyDone: toNumberOrDefault(line.qtyDone, 0),
+    uom: line.uom || productObj?.uom || 'units',
+    fromLocationId: line.fromLocationId?._id || line.fromLocationId || '',
+  }
+}
+
+const buildMoveLines = (lines = []) =>
+  lines
+    .filter((line) => line.productId)
+    .map((line) => ({
+      productId: line.productId,
+      description: line.description || '',
+      qtyOrdered: toNumberOrDefault(line.qtyOrdered ?? line.qty, 0),
+      qtyDone: toNumberOrDefault(line.qtyDone, 0),
+      uom: line.uom || 'units',
+      fromLocationId: line.fromLocationId || undefined,
+    }))
+
 export default function DeliveryFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -36,15 +70,24 @@ export default function DeliveryFormPage() {
     if (delivery) {
       reset({
         reference: delivery.reference,
-        customer: delivery.customer,
+        customer: delivery.supplierOrCustomer || delivery.customer || '',
         scheduledDate: delivery.scheduledDate?.split('T')[0],
-        carrier: delivery.carrier,
-        sourceDocument: delivery.sourceDocument,
+        carrier: delivery.carrier || '',
+        sourceDocument: delivery.sourceDocument || '',
+        notes: delivery.notes || '',
       })
-      setLines(delivery.lines || delivery.items || [])
+      const apiLines = delivery.moveLines || delivery.lines || delivery.items || []
+      setLines(apiLines.map(normalizeLineFromApi))
       setStatus(delivery.status || 'draft')
     } else if (isNew) {
-      reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '', sourceDocument: '' })
+      reset({
+        reference: previewRef('OUT'),
+        customer: '',
+        scheduledDate: new Date().toISOString().split('T')[0],
+        carrier: '',
+        sourceDocument: '',
+        notes: '',
+      })
     }
   }, [delivery, isNew, reset])
 
@@ -67,7 +110,8 @@ export default function DeliveryFormPage() {
       queryClient.invalidateQueries({ queryKey: ['delivery', id] })
       queryClient.invalidateQueries({ queryKey: ['dashboard-kpis'] })
       queryClient.invalidateQueries({ queryKey: ['moves'] })
-      toast.success('Delivery validated! Stock updated.')
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Delivery validated! Stock has been reduced.')
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Validation failed'),
   })
@@ -83,8 +127,28 @@ export default function DeliveryFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || 'Cancel failed'),
   })
 
+  const returnMutation = useMutation({
+    mutationFn: () => deliveryService.return_(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deliveries'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery', id] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Return processed. Stock reversed.')
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Return failed'),
+  })
+
   const onSave = (formData) => {
-    saveMutation.mutate({ ...formData, lines, status: 'draft' })
+    saveMutation.mutate({
+      reference: formData.reference,
+      supplierOrCustomer: formData.customer,   // backend field name
+      scheduledDate: formData.scheduledDate,
+      carrier: formData.carrier,
+      sourceDocument: formData.sourceDocument,
+      notes: formData.notes,
+      status: 'draft',
+      moveLines: buildMoveLines(lines),         // backend field name
+    })
   }
 
   const isReadOnly = status === 'done' || status === 'cancelled'
@@ -93,6 +157,7 @@ export default function DeliveryFormPage() {
 
   return (
     <div>
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">
           {isNew ? 'New Delivery' : delivery?.reference || 'Delivery'}
@@ -113,15 +178,22 @@ export default function DeliveryFormPage() {
             </>
           )}
           {status === 'done' && (
+            <Button variant="secondary" onClick={() => returnMutation.mutate()} loading={returnMutation.isPending}>
+              Return
+            </Button>
+          )}
+          {status === 'cancelled' && (
             <Button variant="secondary" onClick={() => navigate('/operations/deliveries')}>Back to List</Button>
           )}
         </div>
       </div>
 
+      {/* Status Stepper */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
         <StatusStepper steps={STEPS} current={status?.charAt(0).toUpperCase() + status?.slice(1)} />
       </div>
 
+      {/* Form Fields */}
       <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div>
@@ -129,40 +201,69 @@ export default function DeliveryFormPage() {
             <input
               {...register('reference', { required: 'Reference is required' })}
               className="input-field"
-              placeholder="Enter reference"
+              placeholder="e.g. WH/OUT/00001"
               disabled={isReadOnly}
             />
             {errors.reference && <p className="text-xs text-red-500 mt-1">{errors.reference.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Customer *</label>
-            <input {...register('customer', { required: 'Customer is required' })} className="input-field" placeholder="Customer name" disabled={isReadOnly} />
+            <input
+              {...register('customer', { required: 'Customer is required' })}
+              className="input-field"
+              placeholder="Customer / recipient name"
+              disabled={isReadOnly}
+            />
             {errors.customer && <p className="text-xs text-red-500 mt-1">{errors.customer.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Scheduled Date *</label>
-            <input type="date" {...register('scheduledDate', { required: 'Date is required' })} className="input-field" disabled={isReadOnly} />
+            <input
+              type="date"
+              {...register('scheduledDate', { required: 'Date is required' })}
+              className="input-field"
+              disabled={isReadOnly}
+            />
             {errors.scheduledDate && <p className="text-xs text-red-500 mt-1">{errors.scheduledDate.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Carrier</label>
-            <input {...register('carrier')} className="input-field" placeholder="Carrier name" disabled={isReadOnly} />
+            <input {...register('carrier')} className="input-field" placeholder="Carrier / courier name" disabled={isReadOnly} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Source Document</label>
-            <input {...register('sourceDocument')} className="input-field" placeholder="Sales Order ref" disabled={isReadOnly} />
+            <input {...register('sourceDocument')} className="input-field" placeholder="Sales Order / SO number" disabled={isReadOnly} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Notes</label>
+            <textarea {...register('notes')} className="input-field" rows={2} placeholder="Optional notes..." disabled={isReadOnly} />
           </div>
         </div>
       </form>
 
+      {/* Product Lines */}
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-3">Product Lines</h2>
-        <LineItemTable lines={lines} onChange={setLines} readOnly={isReadOnly} />
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-4 py-2 mb-3">
+          Select the <strong>source location</strong> for each product line — stock will be deducted from there when you validate.
+        </div>
+        <LineItemTable
+          lines={lines}
+          onChange={setLines}
+          readOnly={isReadOnly}
+          showLocation={true}
+          locationField="fromLocationId"
+          locationLabel="Source Location"
+        />
       </div>
 
       <ConfirmDialog
-        isOpen={showCancel} onClose={() => setShowCancel(false)} onConfirm={() => cancelMutation.mutate()}
-        title="Cancel Delivery" message="Are you sure you want to cancel this delivery?" confirmLabel="Cancel Delivery"
+        isOpen={showCancel}
+        onClose={() => setShowCancel(false)}
+        onConfirm={() => cancelMutation.mutate()}
+        title="Cancel Delivery"
+        message="Are you sure you want to cancel this delivery? This action cannot be undone."
+        confirmLabel="Cancel Delivery"
         loading={cancelMutation.isPending}
       />
     </div>

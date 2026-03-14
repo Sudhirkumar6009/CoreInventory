@@ -66,6 +66,7 @@ export default function ProductFormPage() {
         sku: product.sku || product.code,
         categoryId: product.categoryId?._id || product.categoryId || "",
         uom: product.uom || "units",
+        perUnitCost: product.perUnitCost ?? 0,
       });
     }
   }, [product, reset]);
@@ -80,6 +81,14 @@ export default function ProductFormPage() {
 
     if (isNew && data.initialStock !== undefined && data.initialStock !== "") {
       payload.initialStock = Number(data.initialStock);
+    }
+
+    if (isNew && data.initialStock !== undefined && data.initialStock !== "") {
+      payload.initialStock = Number(data.initialStock);
+    }
+
+    if (!isNew && data.perUnitCost !== undefined && data.perUnitCost !== "") {
+      payload.perUnitCost = Number(data.perUnitCost);
     }
 
     mutation.mutate(payload);
@@ -217,6 +226,21 @@ export default function ProductFormPage() {
               ))}
             </select>
           </div>
+          {!isNew && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                Per Unit Cost
+              </label>
+              <input
+                type="number"
+                {...register("perUnitCost", { min: 0 })}
+                className="input-field"
+                placeholder="0"
+                min="0"
+                step="0.01"
+              />
+            </div>
+          )}
           {isNew && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">

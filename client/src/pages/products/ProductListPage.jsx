@@ -1,39 +1,18 @@
-import { useState, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { productService } from "../../api/productService";
-import { useDocumentTitle } from "../../hooks/useDocumentTitle";
-import { useRole } from "../../hooks/useRole";
-import FilterBar from "../../components/common/FilterBar";
-import Table from "../../components/common/Table";
-import Pagination from "../../components/common/Pagination";
-import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
-import clsx from "clsx";
-
-const toNumberOrDefault = (value, fallback = 0) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const getPerUnitCost = (row) =>
-  toNumberOrDefault(row.perUnitCost ?? row.unitCost ?? row.cost ?? 0, 0);
-const getOnHand = (row) =>
-  toNumberOrDefault(row.onHand ?? row.totalOnHand ?? row.stock ?? 0, 0);
-const getReservedQty = (row) =>
-  toNumberOrDefault(row.reservedQty ?? row.totalReserved ?? 0, 0);
-const getFreeToUse = (row) => {
-  if (row.freeToUse !== undefined && row.freeToUse !== null)
-    return toNumberOrDefault(row.freeToUse, 0);
-  return getOnHand(row) - getReservedQty(row);
-};
+import { useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery, keepPreviousData } from '@tanstack/react-query'
+import { productService } from '../../api/productService'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
+import FilterBar from '../../components/common/FilterBar'
+import Table from '../../components/common/Table'
+import Pagination from '../../components/common/Pagination'
 
 export default function ProductListPage() {
-  useDocumentTitle("Products");
-  const navigate = useNavigate();
-  const { isManager } = useRole();
-  const [searchParams] = useSearchParams();
-  const [filters, setFilters] = useState({ search: "", page: 1 });
+  useDocumentTitle('Products')
+  const navigate = useNavigate()
+  const { isManager } = useRole()
+  const [filters, setFilters] = useState({ search: '', page: 1 })
 
   const { data, isLoading } = useQuery({
     queryKey: ["products", filters],
@@ -49,69 +28,10 @@ export default function ProductListPage() {
   });
 
   const columns = [
-    {
-      key: "name",
-      label: "Product Name",
-      render: (r) => (
-        <span className="font-medium text-gray-900">{r.name}</span>
-      ),
-    },
-    {
-      key: "sku",
-      label: "SKU",
-      render: (r) => (
-        <span className="text-xs font-mono text-gray-500">
-          {r.sku || r.code || "--"}
-        </span>
-      ),
-    },
-    {
-      key: "perUnitCost",
-      label: "Per Unit Cost",
-      render: (r) => `₹${getPerUnitCost(r).toFixed(2)}`,
-    },
-    {
-      key: "onHand",
-      label: "On Hand",
-      render: (r) => {
-        const onHand = getOnHand(r);
-        const isLow = onHand <= (r.reorderPoint || 0) && onHand > 0;
-        const isOut = onHand === 0;
-        return (
-          <div className="flex items-center gap-1.5">
-            <span
-              className={clsx(
-                isOut && "text-red-600 font-semibold",
-                isLow && "text-amber-600 font-semibold",
-              )}
-            >
-              {onHand}
-            </span>
-            {(isLow || isOut) && (
-              <ExclamationTriangleIcon
-                className={clsx(
-                  "w-4 h-4",
-                  isOut ? "text-red-500" : "text-amber-500",
-                )}
-              />
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "freeToUse",
-      label: "Free To Use",
-      render: (r) => {
-        const free = getFreeToUse(r);
-        return (
-          <span className={clsx(free <= 0 && "text-red-500 font-semibold")}>
-            {free}
-          </span>
-        );
-      },
-    },
-  ];
+    { key: 'name', label: 'Product Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
+    { key: 'sku', label: 'SKU', render: (r) => <span className="text-xs font-mono text-gray-500">{r.sku || r.code || '--'}</span> },
+    { key: 'perUnitCost', label: 'Per Unit Cost', render: (r) => r.perUnitCost != null ? `₹${r.perUnitCost}` : '--' },
+  ]
 
   const handleSearch = useCallback((search) => {
     setFilters((f) => ({ ...f, search, page: 1 }));

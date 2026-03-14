@@ -25,6 +25,11 @@ const productSchema = new mongoose.Schema(
       trim: true,
       default: "units",
     },
+    perUnitCost: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     description: {
       type: String,
       trim: true,

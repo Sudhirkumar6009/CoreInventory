@@ -105,15 +105,15 @@ exports.getProducts = async (req, res, next) => {
     const productIds = products.map((product) => product._id);
     const stockRows = productIds.length
       ? await StockQuant.aggregate([
-          { $match: { productId: { $in: productIds } } },
-          {
-            $group: {
-              _id: "$productId",
-              onHand: { $sum: "$quantity" },
-              reservedQty: { $sum: "$reservedQty" },
-            },
+        { $match: { productId: { $in: productIds } } },
+        {
+          $group: {
+            _id: "$productId",
+            onHand: { $sum: "$quantity" },
+            reservedQty: { $sum: "$reservedQty" },
           },
-        ])
+        },
+      ])
       : [];
 
     const stockByProductId = stockRows.reduce((acc, row) => {
@@ -212,19 +212,7 @@ exports.getProduct = async (req, res, next) => {
  */
 exports.updateProduct = async (req, res, next) => {
   try {
-    const { name, sku, categoryId, uom } = req.body;
-
-    const payload = {
-      name,
-      sku,
-      categoryId: categoryId || null,
-      uom,
-    };
-
-    // Remove undefined keys so partial updates remain valid.
-    Object.keys(payload).forEach(
-      (key) => payload[key] === undefined && delete payload[key],
-    );
+    const payload = normalizeProductPayload(req.body, true);
 
     const product = await Product.findByIdAndUpdate(req.params.id, payload, {
       new: true,
@@ -321,22 +309,14 @@ exports.getProductStock = async (req, res, next) => {
       })
       .lean();
 
-    const totalOnHand = stockQuants.reduce((sum, sq) => sum + sq.quantity, 0);
-    const totalReserved = stockQuants.reduce(
-      (sum, sq) => sum + sq.reservedQty,
-      0,
-    );
+    const totalOnHand = stockQuants.reduce((sum, sq) => sum + (sq.quantity || 0), 0);
+    const totalReserved = stockQuants.reduce((sum, sq) => sum + (sq.reservedQty || 0), 0);
     const freeToUse = totalOnHand - totalReserved;
 
     res.json({
       success: true,
       data: {
-        product: {
-          id: product._id,
-          name: product.name,
-          sku: product.sku,
-          uom: product.uom,
-        },
+        product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
         totalOnHand,
         totalReserved,
         freeToUse,
@@ -344,7 +324,7 @@ exports.getProductStock = async (req, res, next) => {
           location: sq.locationId,
           quantity: sq.quantity,
           reservedQty: sq.reservedQty,
-          freeToUse: sq.quantity - sq.reservedQty,
+          freeToUse: (sq.quantity || 0) - (sq.reservedQty || 0),
         })),
       },
     });
