@@ -56,6 +56,9 @@ exports.getReceipts = async (req, res, next) => {
  * @access  Private
  */
 exports.createReceipt = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { reference: incomingRef, scheduledDate, notes, moveLines } = req.body;
 
@@ -75,24 +78,31 @@ exports.createReceipt = async (req, res, next) => {
 
     let reference = incomingRef?.trim();
     if (reference) {
-      const exists = await StockPicking.exists({ reference });
+      const exists = await StockPicking.exists({ reference }).session(session);
       if (exists) {
+        await session.abortTransaction();
         return res.status(400).json({ success: false, message: 'Reference already exists' });
       }
     } else {
       reference = await generateReference('IN');
     }
 
-    const receipt = await StockPicking.create({
-      reference,
-      pickingType: 'IN',
-      scheduledDate,
-      notes,
-      status: 'draft',
-      createdBy: req.user._id,
-    });
+    const [receipt] = await StockPicking.create(
+      [
+        {
+          reference,
+          pickingType: 'IN',
+          scheduledDate,
+          notes,
+          status: 'draft',
+          createdBy: req.user._id,
+        },
+      ],
+      { session }
+    );
 
     // Create move lines
+    let createdLines = [];
     if (moveLines && moveLines.length > 0) {
       const lines = moveLines.map((line) => ({
         pickingId: receipt._id,
@@ -103,8 +113,57 @@ exports.createReceipt = async (req, res, next) => {
         toLocationId: line.toLocationId,
         status: 'draft',
       }));
-      await StockMoveLine.insertMany(lines);
+      createdLines = await StockMoveLine.insertMany(lines, { session });
     }
+
+    // Auto-post newly created receipt quantities to stock for consistency.
+    if (createdLines.length > 0) {
+      const qtyByProduct = new Map();
+
+      for (const line of createdLines) {
+        const qtyToReceive = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+        const productId = line.productId.toString();
+        qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qtyToReceive);
+
+        line.qtyDone = qtyToReceive;
+        line.status = 'done';
+        await line.save({ session });
+
+        await StockMove.create(
+          [
+            {
+              reference: receipt.reference,
+              pickingId: receipt._id,
+              productId: line.productId,
+              toLocationId: line.toLocationId,
+              quantity: qtyToReceive,
+              uom: line.uom,
+              moveType: 'IN',
+              status: 'done',
+              createdBy: req.user._id,
+            },
+          ],
+          { session }
+        );
+      }
+
+      const quantOps = Array.from(qtyByProduct.entries()).map(([productId, quantity]) => ({
+        updateOne: {
+          filter: { productId },
+          update: { $inc: { quantity } },
+          upsert: true,
+        },
+      }));
+
+      if (quantOps.length > 0) {
+        await StockQuant.bulkWrite(quantOps, { session });
+      }
+
+      receipt.status = 'done';
+      await receipt.save({ session });
+    }
+
+    await session.commitTransaction();
 
     const populatedReceipt = await StockPicking.findById(receipt._id)
       .populate('createdBy', 'name email')
@@ -121,7 +180,10 @@ exports.createReceipt = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: createdReceipt });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 

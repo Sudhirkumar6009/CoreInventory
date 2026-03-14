@@ -37,7 +37,7 @@ export default function DeliveryFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const isNew = id === 'new'
+  const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Delivery' : `Delivery ${id}`)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
@@ -67,7 +67,12 @@ export default function DeliveryFormPage() {
   }, [delivery, isNew, reset])
 
   const saveMutation = useMutation({
-    mutationFn: (data) => isNew ? deliveryService.create(data) : deliveryService.update(id, data),
+    mutationFn: (data) => {
+      if (!isNew && !id) {
+        throw new Error('Delivery id is missing for update')
+      }
+      return isNew ? deliveryService.create(data) : deliveryService.update(id, data)
+    },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['deliveries'] })
       toast.success('Delivery saved')
@@ -125,7 +130,12 @@ export default function DeliveryFormPage() {
       }))
       .filter((line) => line.productId && line.qtyOrdered > 0)
 
-    saveMutation.mutate({ ...formData, moveLines, status: 'draft' })
+    saveMutation.mutate({
+      ...formData,
+      reference: formData.reference || previewRef('OUT'),
+      moveLines,
+      status: 'draft',
+    })
   }
 
   const isReadOnly = status === 'done' || status === 'cancelled'

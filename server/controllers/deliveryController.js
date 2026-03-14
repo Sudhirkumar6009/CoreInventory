@@ -52,6 +52,9 @@ exports.getDeliveries = async (req, res, next) => {
  * @access  Private
  */
 exports.createDelivery = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, moveLines } = req.body;
 
@@ -62,6 +65,7 @@ exports.createDelivery = async (req, res, next) => {
       });
 
       if (hasInvalidLine) {
+        await session.abortTransaction();
         return res.status(400).json({
           success: false,
           message: 'Each move line must include a valid product and quantity greater than zero',
@@ -71,24 +75,31 @@ exports.createDelivery = async (req, res, next) => {
 
     let reference = incomingRef?.trim();
     if (reference) {
-      const exists = await StockPicking.exists({ reference });
+      const exists = await StockPicking.exists({ reference }).session(session);
       if (exists) {
+        await session.abortTransaction();
         return res.status(400).json({ success: false, message: 'Reference already exists' });
       }
     } else {
       reference = await generateReference('OUT');
     }
 
-    const delivery = await StockPicking.create({
-      reference,
-      pickingType: 'OUT',
-      supplierOrCustomer,
-      scheduledDate,
-      notes,
-      status: 'draft',
-      createdBy: req.user._id,
-    });
+    const [delivery] = await StockPicking.create(
+      [
+        {
+          reference,
+          pickingType: 'OUT',
+          supplierOrCustomer,
+          scheduledDate,
+          notes,
+          status: 'draft',
+          createdBy: req.user._id,
+        },
+      ],
+      { session }
+    );
 
+    let createdLines = [];
     if (moveLines && moveLines.length > 0) {
       const lines = moveLines.map((line) => ({
         pickingId: delivery._id,
@@ -99,8 +110,73 @@ exports.createDelivery = async (req, res, next) => {
         fromLocationId: line.fromLocationId,
         status: 'draft',
       }));
-      await StockMoveLine.insertMany(lines);
+      createdLines = await StockMoveLine.insertMany(lines, { session });
     }
+
+    // Auto-post newly created delivery quantities to stock for consistency.
+    if (createdLines.length > 0) {
+      const qtyByProduct = new Map();
+
+      for (const line of createdLines) {
+        const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+        const productId = line.productId.toString();
+        qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qtyToDeliver);
+      }
+
+      for (const [productId, requiredQty] of qtyByProduct.entries()) {
+        const quant = await StockQuant.findOne({ productId }).session(session);
+        const availableQty = quant ? quant.quantity - quant.reservedQty : 0;
+
+        if (availableQty < requiredQty) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for product. Available: ${availableQty}, Required: ${requiredQty}`,
+          });
+        }
+      }
+
+      const quantOps = Array.from(qtyByProduct.entries()).map(([productId, quantity]) => ({
+        updateOne: {
+          filter: { productId },
+          update: { $inc: { quantity: -quantity } },
+        },
+      }));
+
+      if (quantOps.length > 0) {
+        await StockQuant.bulkWrite(quantOps, { session });
+      }
+
+      for (const line of createdLines) {
+        const qtyToDeliver = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+
+        line.qtyDone = qtyToDeliver;
+        line.status = 'done';
+        await line.save({ session });
+
+        await StockMove.create(
+          [
+            {
+              reference: delivery.reference,
+              pickingId: delivery._id,
+              productId: line.productId,
+              fromLocationId: line.fromLocationId,
+              quantity: qtyToDeliver,
+              uom: line.uom,
+              moveType: 'OUT',
+              status: 'done',
+              createdBy: req.user._id,
+            },
+          ],
+          { session }
+        );
+      }
+
+      delivery.status = 'done';
+      await delivery.save({ session });
+    }
+
+    await session.commitTransaction();
 
     const populatedDelivery = await StockPicking.findById(delivery._id)
       .populate('createdBy', 'name email')
@@ -114,7 +190,10 @@ exports.createDelivery = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: populatedDelivery });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
