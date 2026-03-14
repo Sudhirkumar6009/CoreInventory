@@ -3,7 +3,117 @@ const StockPicking = require("../models/StockPicking");
 const StockMoveLine = require("../models/StockMoveLine");
 const StockMove = require("../models/StockMove");
 const StockQuant = require("../models/StockQuant");
+const Location = require("../models/Location");
 const generateReference = require("../utils/generateReference");
+
+const isStaffUser = (user) => user?.role === "staff";
+
+const ensureStaffWarehouseScope = async (
+  sourceLocation,
+  destinationLocation,
+  user,
+) => {
+  if (!isStaffUser(user)) {
+    return { ok: true };
+  }
+
+  if (!sourceLocation || !destinationLocation) {
+    return {
+      ok: false,
+      message: "Source and destination are required for staff transfers",
+    };
+  }
+
+  const [source, destination] = await Promise.all([
+    Location.findById(sourceLocation).select("warehouseId").lean(),
+    Location.findById(destinationLocation).select("warehouseId").lean(),
+  ]);
+
+  if (!source || !destination) {
+    return { ok: false, message: "Invalid source or destination location" };
+  }
+
+  if (String(source.warehouseId) !== String(destination.warehouseId)) {
+    return {
+      ok: false,
+      message: "Staff transfers must stay inside the same warehouse",
+    };
+  }
+
+  return { ok: true };
+};
+
+const getTransferScopeFilter = (req, extra = {}) => {
+  const filter = { pickingType: "INTERNAL", ...extra };
+  if (isStaffUser(req.user)) {
+    filter.createdBy = req.user._id;
+  }
+  return filter;
+};
+
+const applyTransferLines = async (session, transfer, moveLines, userId) => {
+  if (!moveLines.length) {
+    throw new Error("Transfer has no product lines");
+  }
+
+  for (const line of moveLines) {
+    const qtyToTransfer = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+
+    const srcQuant = await StockQuant.findOne({ productId: line.productId }).session(
+      session,
+    );
+    const available = srcQuant ? srcQuant.quantity : 0;
+
+    if (available < qtyToTransfer) {
+      throw new Error(
+        `Insufficient stock at source location. Available: ${available}, Required: ${qtyToTransfer}`,
+      );
+    }
+  }
+
+  for (const line of moveLines) {
+    const qtyToTransfer = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
+    const fromLocationId = line.fromLocationId || transfer.sourceLocation || null;
+    const toLocationId = line.toLocationId || transfer.destinationLocation || null;
+
+    await StockQuant.findOneAndUpdate(
+      { productId: line.productId },
+      { $inc: { quantity: -qtyToTransfer } },
+      { session },
+    );
+
+    await StockQuant.findOneAndUpdate(
+      { productId: line.productId },
+      { $inc: { quantity: qtyToTransfer } },
+      { upsert: true, session },
+    );
+
+    await StockMove.create(
+      [
+        {
+          reference: transfer.reference,
+          pickingId: transfer._id,
+          productId: line.productId,
+          fromLocationId,
+          toLocationId,
+          quantity: qtyToTransfer,
+          uom: line.uom,
+          moveType: "INTERNAL",
+          status: "done",
+          createdBy: userId,
+        },
+      ],
+      { session },
+    );
+
+    line.qtyDone = qtyToTransfer;
+    line.status = "done";
+    await line.save({ session });
+  }
+
+  transfer.status = "done";
+  await transfer.save({ session });
+};
 
 /**
  * @desc    Get all transfers
@@ -14,7 +124,7 @@ exports.getTransfers = async (req, res, next) => {
   try {
     const { status, search, page = 1, limit = 25 } = req.query;
 
-    const filter = { pickingType: "INTERNAL" };
+    const filter = getTransferScopeFilter(req);
     if (status) filter.status = status;
     if (search) {
       filter.$or = [{ reference: { $regex: search, $options: "i" } }];
@@ -51,6 +161,9 @@ exports.getTransfers = async (req, res, next) => {
  * @access  Private
  */
 exports.createTransfer = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const {
       reference: incomingRef,
@@ -85,6 +198,16 @@ exports.createTransfer = async (req, res, next) => {
       });
     }
 
+    const warehouseScope = await ensureStaffWarehouseScope(
+      sourceLocation,
+      destinationLocation,
+      req.user,
+    );
+    if (!warehouseScope.ok) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: warehouseScope.message });
+    }
+
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
         const qtyOrdered = Number(line?.qtyOrdered || 0);
@@ -110,8 +233,9 @@ exports.createTransfer = async (req, res, next) => {
 
     let reference = incomingRef?.trim();
     if (reference) {
-      const exists = await StockPicking.exists({ reference });
+      const exists = await StockPicking.exists({ reference }).session(session);
       if (exists) {
+        await session.abortTransaction();
         return res
           .status(400)
           .json({ success: false, message: "Reference already exists" });
@@ -120,17 +244,23 @@ exports.createTransfer = async (req, res, next) => {
       reference = await generateReference("INTERNAL");
     }
 
-    const transfer = await StockPicking.create({
-      reference,
-      pickingType: "INTERNAL",
-      sourceLocation: sourceLocation || null,
-      destinationLocation: destinationLocation || null,
-      scheduledDate,
-      notes,
-      status: "draft",
-      createdBy: req.user._id,
-    });
+    const [transfer] = await StockPicking.create(
+      [
+        {
+          reference,
+          pickingType: "INTERNAL",
+          sourceLocation: sourceLocation || null,
+          destinationLocation: destinationLocation || null,
+          scheduledDate,
+          notes,
+          status: "draft",
+          createdBy: req.user._id,
+        },
+      ],
+      { session },
+    );
 
+    let insertedLines = [];
     if (moveLines && moveLines.length > 0) {
       const lines = moveLines.map((line) => ({
         pickingId: transfer._id,
@@ -142,8 +272,21 @@ exports.createTransfer = async (req, res, next) => {
         toLocationId: line.toLocationId || destinationLocation,
         status: "draft",
       }));
-      await StockMoveLine.insertMany(lines);
+      insertedLines = await StockMoveLine.insertMany(lines, { session });
     }
+
+    if (isStaffUser(req.user)) {
+      if (!insertedLines.length) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Staff transfer requires at least one product line",
+        });
+      }
+      await applyTransferLines(session, transfer, insertedLines, req.user._id);
+    }
+
+    await session.commitTransaction();
 
     const populatedTransfer = await StockPicking.findById(transfer._id)
       .populate("createdBy", "name email")
@@ -158,7 +301,10 @@ exports.createTransfer = async (req, res, next) => {
 
     res.status(201).json({ success: true, data: populatedTransfer });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -171,7 +317,7 @@ exports.getTransfer = async (req, res, next) => {
   try {
     const transfer = await StockPicking.findOne({
       _id: req.params.id,
-      pickingType: "INTERNAL",
+      ...getTransferScopeFilter(req),
     })
       .populate("createdBy", "name email")
       .populate("sourceLocation", "name shortCode")
@@ -203,11 +349,14 @@ exports.getTransfer = async (req, res, next) => {
  * @access  Private
  */
 exports.updateTransfer = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const transfer = await StockPicking.findOne({
       _id: req.params.id,
-      pickingType: "INTERNAL",
-    });
+      ...getTransferScopeFilter(req),
+    }).session(session);
 
     if (!transfer) {
       return res
@@ -232,6 +381,14 @@ exports.updateTransfer = async (req, res, next) => {
       moveLines,
     } = req.body;
 
+    if (isStaffUser(req.user) && status && status !== transfer.status) {
+      await session.abortTransaction();
+      return res.status(403).json({
+        success: false,
+        message: "Staff cannot change transfer status manually",
+      });
+    }
+
     if (sourceLocation && !mongoose.Types.ObjectId.isValid(sourceLocation)) {
       return res
         .status(400)
@@ -254,6 +411,16 @@ exports.updateTransfer = async (req, res, next) => {
         success: false,
         message: "Source and destination cannot be the same location",
       });
+    }
+
+    const warehouseScope = await ensureStaffWarehouseScope(
+      sourceLocation || transfer.sourceLocation,
+      destinationLocation || transfer.destinationLocation,
+      req.user,
+    );
+    if (!warehouseScope.ok) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: warehouseScope.message });
     }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
@@ -290,8 +457,9 @@ exports.updateTransfer = async (req, res, next) => {
     ) {
       const exists = await StockPicking.exists({
         reference: incomingRef.trim(),
-      });
+      }).session(session);
       if (exists) {
+        await session.abortTransaction();
         return res
           .status(400)
           .json({ success: false, message: "Reference already exists" });
@@ -307,10 +475,11 @@ exports.updateTransfer = async (req, res, next) => {
     if (notes !== undefined) transfer.notes = notes;
     if (status) transfer.status = status;
 
-    await transfer.save();
+    await transfer.save({ session });
 
+    let updatedLines = [];
     if (moveLines && moveLines.length > 0) {
-      await StockMoveLine.deleteMany({ pickingId: transfer._id });
+      await StockMoveLine.deleteMany({ pickingId: transfer._id }).session(session);
       const lines = moveLines.map((line) => ({
         pickingId: transfer._id,
         productId: line.productId,
@@ -321,8 +490,23 @@ exports.updateTransfer = async (req, res, next) => {
         toLocationId: line.toLocationId || transfer.destinationLocation,
         status: transfer.status,
       }));
-      await StockMoveLine.insertMany(lines);
+      updatedLines = await StockMoveLine.insertMany(lines, { session });
+    } else {
+      updatedLines = await StockMoveLine.find({ pickingId: transfer._id }).session(session);
     }
+
+    if (isStaffUser(req.user)) {
+      if (!updatedLines.length) {
+        await session.abortTransaction();
+        return res.status(400).json({
+          success: false,
+          message: "Staff transfer requires at least one product line",
+        });
+      }
+      await applyTransferLines(session, transfer, updatedLines, req.user._id);
+    }
+
+    await session.commitTransaction();
 
     const updatedTransfer = await StockPicking.findById(transfer._id)
       .populate("createdBy", "name email")
@@ -339,7 +523,10 @@ exports.updateTransfer = async (req, res, next) => {
 
     res.json({ success: true, data: updatedTransfer });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -355,7 +542,7 @@ exports.validateTransfer = async (req, res, next) => {
   try {
     const transfer = await StockPicking.findOne({
       _id: req.params.id,
-      pickingType: "INTERNAL",
+      ...getTransferScopeFilter(req),
     }).session(session);
 
     if (!transfer) {
@@ -391,73 +578,7 @@ exports.validateTransfer = async (req, res, next) => {
         .json({ success: false, message: "Transfer has no product lines" });
     }
 
-    // Check availability
-    for (const line of moveLines) {
-      const qtyToTransfer = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
-
-      const srcQuant = await StockQuant.findOne({
-        productId: line.productId,
-      }).session(session);
-
-      const available = srcQuant ? srcQuant.quantity : 0;
-
-      if (available < qtyToTransfer) {
-        await session.abortTransaction();
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient stock at source location. Available: ${available}, Required: ${qtyToTransfer}`,
-        });
-      }
-    }
-
-    // Process transfer lines
-    for (const line of moveLines) {
-      const qtyToTransfer = line.qtyDone > 0 ? line.qtyDone : line.qtyOrdered;
-      const fromLocationId =
-        line.fromLocationId || transfer.sourceLocation || null;
-      const toLocationId =
-        line.toLocationId || transfer.destinationLocation || null;
-
-      // Decrease at source
-      await StockQuant.findOneAndUpdate(
-        { productId: line.productId },
-        { $inc: { quantity: -qtyToTransfer } },
-        { session },
-      );
-
-      // Increase at destination
-      await StockQuant.findOneAndUpdate(
-        { productId: line.productId },
-        { $inc: { quantity: qtyToTransfer } },
-        { upsert: true, session },
-      );
-
-      // Ledger entry
-      await StockMove.create(
-        [
-          {
-            reference: transfer.reference,
-            pickingId: transfer._id,
-            productId: line.productId,
-            fromLocationId,
-            toLocationId,
-            quantity: qtyToTransfer,
-            uom: line.uom,
-            moveType: "INTERNAL",
-            status: "done",
-            createdBy: req.user._id,
-          },
-        ],
-        { session },
-      );
-
-      line.qtyDone = qtyToTransfer;
-      line.status = "done";
-      await line.save({ session });
-    }
-
-    transfer.status = "done";
-    await transfer.save({ session });
+    await applyTransferLines(session, transfer, moveLines, req.user._id);
 
     await session.commitTransaction();
 
@@ -494,7 +615,7 @@ exports.cancelTransfer = async (req, res, next) => {
   try {
     const transfer = await StockPicking.findOne({
       _id: req.params.id,
-      pickingType: "INTERNAL",
+      ...getTransferScopeFilter(req),
     });
 
     if (!transfer) {

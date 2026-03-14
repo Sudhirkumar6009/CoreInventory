@@ -3,36 +3,32 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adjustmentService } from '../../api/adjustmentService'
+import { productService } from '../../api/productService'
 import { warehouseService } from '../../api/warehouseService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
-import { useRole } from '../../hooks/useRole'
 import { previewRef } from '../../utils/generateReference'
 import Button from '../../components/common/Button'
-import StatusStepper from '../../components/common/StatusStepper'
 import Spinner from '../../components/common/Spinner'
-import ConfirmDialog from '../../components/common/ConfirmDialog'
 import toast from 'react-hot-toast'
-import clsx from 'clsx'
-
-const STEPS = ['Draft', 'Waiting', 'Ready', 'Done']
-const STATUS_OPTIONS = ['draft', 'waiting', 'ready', 'done', 'cancelled']
 
 export default function AdjustmentFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { isManager } = useRole()
   const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Adjustment' : `Adjustment ${id}`)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
   const [lines, setLines] = useState([])
-  const [status, setStatus] = useState('draft')
-  const [showCancel, setShowCancel] = useState(false)
 
   const { data: locations } = useQuery({
     queryKey: ['locations'],
     queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || r.data?.locations || r.data || []),
+  })
+
+  const { data: products = [] } = useQuery({
+    queryKey: ['products', 'adjustment-form'],
+    queryFn: () => productService.getAll({ limit: 500 }).then((r) => r.data?.data || r.data?.products || r.data || []),
   })
 
   const { data: adjustment, isLoading: fetchLoading } = useQuery({
@@ -45,13 +41,24 @@ export default function AdjustmentFormPage() {
     if (adjustment) {
       reset({
         reference: adjustment.reference,
-        date: adjustment.date?.split('T')[0],
-        location: adjustment.location?._id || adjustment.location,
+        date: (adjustment.adjustmentDate || adjustment.date)?.split('T')[0],
+        locationId: adjustment.locationId?._id || adjustment.location?._id || adjustment.locationId || adjustment.location,
       })
-      setLines(adjustment.lines || adjustment.items || [])
-      setStatus(adjustment.status || 'draft')
+      const loadedLines = (adjustment.lines || adjustment.items || []).map((line) => {
+        const productObj = typeof line.productId === 'object' ? line.productId : null
+        const productId = productObj?._id || line.productId || ''
+        return {
+          id: line.id || line._id || crypto.randomUUID(),
+          productId,
+          itemName: line.itemName || productObj?.name || line.productName || '',
+          sku: line.sku || productObj?.sku || '',
+          recordedQty: Number(line.recordedQty || 0),
+          updatedQty: Number(line.updatedQty ?? line.countedQty ?? 0),
+        }
+      })
+      setLines(loadedLines)
     } else if (isNew) {
-      reset({ reference: previewRef('ADJ'), date: new Date().toISOString().split('T')[0], location: '' })
+      reset({ reference: previewRef('ADJ'), date: new Date().toISOString().split('T')[0], locationId: '' })
     }
   }, [adjustment, isNew, reset])
 
@@ -61,65 +68,82 @@ export default function AdjustmentFormPage() {
       queryClient.invalidateQueries({ queryKey: ['adjustments'] })
       toast.success('Adjustment saved')
       const created = res.data?.data || res.data
-      if (created?.status) setStatus(created.status)
       if (isNew) navigate(`/operations/adjustments/${created?._id || created?.id}`, { replace: true })
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Save failed'),
   })
 
-  const validateMutation = useMutation({
-    mutationFn: () => adjustmentService.validate(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adjustments'] })
-      queryClient.invalidateQueries({ queryKey: ['adjustment', id] })
-      queryClient.invalidateQueries({ queryKey: ['products'] })
-      toast.success('Adjustment validated! Stock updated.')
-    },
-    onError: (err) => toast.error(err.response?.data?.message || 'Validation failed'),
-  })
-
   const onSave = (formData) => {
+    if (!formData.locationId) {
+      toast.error('Location is required')
+      return
+    }
+
+    const cleanLines = lines
+      .filter((line) => line.productId && Number.isFinite(Number(line.updatedQty)))
+      .map((line) => ({
+        productId: line.productId,
+        itemName: line.itemName,
+        sku: line.sku,
+        updatedQty: Number(line.updatedQty),
+      }))
+
+    if (cleanLines.length === 0) {
+      toast.error('Add at least one valid product line')
+      return
+    }
+
     saveMutation.mutate({
-      ...formData,
       reference: formData.reference || previewRef('ADJ'),
-      status: isManager ? status : 'draft',
-      lines,
+      date: formData.date,
+      locationId: formData.locationId,
+      lines: cleanLines,
     })
   }
-  const isReadOnly = status === 'done' || status === 'cancelled'
 
   if (fetchLoading && !isNew) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
 
   const addLine = () => {
-    setLines([...lines, { id: crypto.randomUUID(), productId: '', productName: '', recordedQty: 0, countedQty: 0, reason: '' }])
+    setLines([...lines, { id: crypto.randomUUID(), productId: '', itemName: '', sku: '', recordedQty: 0, updatedQty: 0 }])
   }
 
   const updateLine = (lineId, field, value) => {
-    setLines(lines.map((l) => l.id === lineId ? { ...l, [field]: value } : l))
+    setLines((prev) => prev.map((line) => (line.id === lineId ? { ...line, [field]: value } : line)))
   }
 
   const removeLine = (lineId) => { setLines(lines.filter((l) => l.id !== lineId)) }
+
+  const handleProductChange = (lineId, selectedProductId) => {
+    const product = products.find((p) => String(p._id || p.id) === String(selectedProductId))
+    if (!product) {
+      updateLine(lineId, 'productId', '')
+      updateLine(lineId, 'itemName', '')
+      updateLine(lineId, 'sku', '')
+      updateLine(lineId, 'recordedQty', 0)
+      return
+    }
+
+    setLines((prev) => prev.map((line) => (
+      line.id === lineId
+        ? {
+          ...line,
+          productId: product._id || product.id,
+          itemName: product.name,
+          sku: product.sku || '',
+          recordedQty: Number(product.onHand || 0),
+        }
+        : line
+    )))
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{isNew ? 'New Adjustment' : adjustment?.reference || 'Adjustment'}</h1>
         <div className="flex items-center gap-3">
-          {status === 'draft' && (
-            <>
-              <Button variant="secondary" onClick={() => navigate('/operations/adjustments')}>Discard</Button>
-              <Button onClick={handleSubmit(onSave)} loading={saveMutation.isPending}>Save</Button>
-              {!isNew && <Button variant="success" onClick={() => validateMutation.mutate()} loading={validateMutation.isPending}>Validate</Button>}
-            </>
-          )}
-          {status !== 'draft' && isManager && (
-            <Button onClick={handleSubmit(onSave)} loading={saveMutation.isPending}>Save</Button>
-          )}
+          <Button variant="secondary" onClick={() => navigate('/operations/adjustments')}>Back</Button>
+          <Button onClick={handleSubmit(onSave)} loading={saveMutation.isPending}>Save</Button>
         </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-        <StatusStepper steps={STEPS} current={status?.charAt(0).toUpperCase() + status?.slice(1)} />
       </div>
 
       <form className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -136,27 +160,15 @@ export default function AdjustmentFormPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
-            <input type="date" {...register('date')} className="input-field" disabled={isReadOnly} />
+            <input type="date" {...register('date')} className="input-field" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
-            <select {...register('location')} className="input-field" disabled={isReadOnly}>
+            <select {...register('locationId', { required: 'Location is required' })} className="input-field">
               <option value="">Select location...</option>
               {(locations || []).map((l) => <option key={l._id || l.id} value={l._id || l.id}>{l.name}</option>)}
             </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="input-field"
-              disabled={!isManager}
-            >
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            {errors.locationId && <p className="text-xs text-red-500 mt-1">{errors.locationId.message}</p>}
           </div>
         </div>
       </form>
@@ -167,61 +179,74 @@ export default function AdjustmentFormPage() {
           <table className="w-full">
             <thead>
               <tr className="bg-gray-50/80 border-b border-gray-100">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Product</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Item Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-40">SKU</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Recorded Qty</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Counted Qty</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Updated Qty</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Delta</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Reason</th>
-                {!isReadOnly && <th className="w-12" />}
+                <th className="w-12" />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {lines.map((line) => {
-                const delta = (line.countedQty || 0) - (line.recordedQty || 0)
+                const delta = Number(line.updatedQty || 0) - Number(line.recordedQty || 0)
                 return (
                   <tr key={line.id} className="group">
                     <td className="px-4 py-2">
-                      <input value={line.productName || ''} onChange={(e) => updateLine(line.id, 'productName', e.target.value)}
-                        className="input-field text-sm" placeholder="Product name" disabled={isReadOnly} />
+                      <select
+                        value={line.productId || ''}
+                        onChange={(e) => handleProductChange(line.id, e.target.value)}
+                        className="input-field text-sm"
+                      >
+                        <option value="">Select product...</option>
+                        {products.map((product) => (
+                          <option key={product._id || product.id} value={product._id || product.id}>
+                            {product.name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="px-4 py-2">
+                      <input value={line.sku || ''} className="input-field text-sm bg-gray-50" readOnly />
                     </td>
                     <td className="px-4 py-2">
                       <input type="number" value={line.recordedQty || 0} className="input-field text-sm bg-gray-50" readOnly />
                     </td>
                     <td className="px-4 py-2">
-                      <input type="number" value={line.countedQty || 0}
-                        onChange={(e) => updateLine(line.id, 'countedQty', Number(e.target.value))}
-                        className="input-field text-sm" min="0" disabled={isReadOnly} />
+                      <input
+                        type="number"
+                        value={line.updatedQty || 0}
+                        onChange={(e) => updateLine(line.id, 'updatedQty', Number(e.target.value))}
+                        className="input-field text-sm"
+                        min="0"
+                      />
                     </td>
                     <td className="px-4 py-2">
-                      <span className={clsx('text-sm font-medium',
-                        delta > 0 && 'text-green-600', delta < 0 && 'text-red-600', delta === 0 && 'text-gray-400'
-                      )}>
+                      <span className={`text-sm font-medium ${delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-gray-400'}`}>
                         {delta > 0 ? `+${delta}` : delta === 0 ? 'No change' : delta}
                       </span>
                     </td>
-                    <td className="px-4 py-2">
-                      <input value={line.reason || ''} onChange={(e) => updateLine(line.id, 'reason', e.target.value)}
-                        className="input-field text-sm" placeholder="Reason" disabled={isReadOnly} />
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => removeLine(line.id)}
+                        className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                      >
+                        x
+                      </button>
                     </td>
-                    {!isReadOnly && (
-                      <td className="px-2 py-2">
-                        <button onClick={() => removeLine(line.id)}
-                          className="p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100">
-                          ✕
-                        </button>
-                      </td>
-                    )}
                   </tr>
                 )
               })}
             </tbody>
           </table>
-          {!isReadOnly && (
-            <button onClick={addLine}
-              className="w-full py-3 text-sm text-brand-accent hover:bg-brand-accent/5 transition-colors flex items-center justify-center gap-2 border-t border-gray-100">
-              + Add a line
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={addLine}
+            className="w-full py-3 text-sm text-brand-accent hover:bg-brand-accent/5 transition-colors flex items-center justify-center gap-2 border-t border-gray-100"
+          >
+            + Add a line
+          </button>
         </div>
       </div>
     </div>

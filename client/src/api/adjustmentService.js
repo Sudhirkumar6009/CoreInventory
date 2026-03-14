@@ -5,6 +5,4 @@ export const adjustmentService = {
   getById:   (id)     => api.get(`/adjustments/${id}`),
   create:    (data)   => api.post('/adjustments', data),
   update:    (id, data) => api.put(`/adjustments/${id}`, data),
-  validate:  (id)     => api.post(`/adjustments/${id}/validate`),
-  cancel:    (id)     => api.post(`/adjustments/${id}/cancel`),
 }

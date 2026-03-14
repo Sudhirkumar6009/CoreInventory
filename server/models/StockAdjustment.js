@@ -8,38 +8,46 @@ const stockAdjustmentSchema = new mongoose.Schema(
       unique: true,
       trim: true,
     },
-    productId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true,
-    },
     locationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Location',
       required: true,
     },
-    recordedQty: {
-      type: Number,
-      required: true,
+    adjustmentDate: {
+      type: Date,
+      default: Date.now,
     },
-    countedQty: {
-      type: Number,
-      required: true,
-    },
-    delta: {
-      type: Number,
-      required: true,
-    },
-    reason: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-    status: {
-      type: String,
-      enum: ['draft', 'waiting', 'ready', 'done', 'cancelled'],
-      default: 'draft',
-    },
+    lines: [
+      {
+        productId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'Product',
+          required: true,
+        },
+        itemName: {
+          type: String,
+          trim: true,
+          default: '',
+        },
+        sku: {
+          type: String,
+          trim: true,
+          default: '',
+        },
+        recordedQty: {
+          type: Number,
+          required: true,
+        },
+        updatedQty: {
+          type: Number,
+          required: true,
+        },
+        delta: {
+          type: Number,
+          required: true,
+        },
+      },
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
