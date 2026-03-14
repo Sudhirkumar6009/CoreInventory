@@ -63,6 +63,7 @@ exports.getMoves = async (req, res, next) => {
   try {
     const {
       moveType,
+      type,
       product,
       dateFrom,
       dateTo,
@@ -74,7 +75,13 @@ exports.getMoves = async (req, res, next) => {
 
     const filter = {};
 
-    if (moveType) filter.moveType = moveType;
+    const requestedType = moveType || type;
+
+    if (req.user?.role === 'staff') {
+      filter.moveType = 'INTERNAL';
+    }
+
+    if (requestedType && req.user?.role !== 'staff') filter.moveType = requestedType;
     if (product) filter.productId = product;
     if (search) {
       filter.reference = { $regex: search, $options: 'i' };
@@ -126,7 +133,12 @@ exports.getMoves = async (req, res, next) => {
  */
 exports.getMove = async (req, res, next) => {
   try {
-    const move = await StockMove.findById(req.params.id)
+    const filter = { _id: req.params.id };
+    if (req.user?.role === 'staff') {
+      filter.moveType = 'INTERNAL';
+    }
+
+    const move = await StockMove.findOne(filter)
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')

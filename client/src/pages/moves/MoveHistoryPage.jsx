@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { moveService } from '../../api/moveService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import FilterBar from '../../components/common/FilterBar'
 import Table from '../../components/common/Table'
 import Pagination from '../../components/common/Pagination'
@@ -12,7 +13,8 @@ import { MOVE_TYPES } from '../../constants'
 
 export default function MoveHistoryPage() {
   useDocumentTitle('Move History')
-  const [filters, setFilters] = useState({ type: '', search: '', status: 'done', page: 1 })
+  const { isManager } = useRole()
+  const [filters, setFilters] = useState({ moveType: isManager ? '' : 'INTERNAL', search: '', status: 'done', page: 1 })
   const [selectedMove, setSelectedMove] = useState(null)
 
   const { data, isLoading } = useQuery({
@@ -40,9 +42,12 @@ export default function MoveHistoryPage() {
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])
   const items = data?.items || []
 
-  const typeFilter = (
-    <select value={filters.type} onChange={(e) => setFilters((f) => ({ ...f, type: e.target.value, page: 1 }))}
-      className="input-field py-2 text-sm min-w-[130px]">
+  const managerTypeFilter = (
+    <select
+      value={filters.moveType}
+      onChange={(e) => setFilters((f) => ({ ...f, moveType: e.target.value, page: 1 }))}
+      className="input-field py-2 text-sm min-w-[130px]"
+    >
       <option value="">All Types</option>
       {MOVE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
     </select>
@@ -53,7 +58,7 @@ export default function MoveHistoryPage() {
       <h1 className="text-2xl font-bold text-gray-900 mb-5">Move History</h1>
       <FilterBar module="moves" hideNew onSearch={handleSearch}
         statusFilter={filters.status} onStatusChange={(s) => setFilters((f) => ({ ...f, status: s, page: 1 }))}
-        extraFilters={typeFilter} />
+        extraFilters={isManager ? managerTypeFilter : null} />
       <Table columns={columns} data={items} loading={isLoading} emptyMessage="No moves found."
         onRowClick={(row) => setSelectedMove(row)} />
       <Pagination page={filters.page} totalPages={data?.totalPages || 1} onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))} />

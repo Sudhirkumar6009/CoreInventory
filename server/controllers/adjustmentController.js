@@ -226,8 +226,7 @@ exports.updateAdjustment = async (req, res, next) => {
     const { reference: incomingRef, locationId, location, date, lines = [] } = req.body;
     const resolvedLocationId = locationId || location || adjustment.locationId;
 
-    const normalizedLines = await normalizeLines(lines);
-    if (normalizedLines.length === 0) {
+    if (!Array.isArray(lines) || lines.length === 0) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, message: 'At least one valid product line is required' });
     }
@@ -242,6 +241,13 @@ exports.updateAdjustment = async (req, res, next) => {
     }
 
     await reverseAdjustmentLines(session, adjustment, req.user._id);
+
+    // Recompute recorded quantities after reversal to keep stock math accurate on edits.
+    const normalizedLines = await normalizeLines(lines);
+    if (normalizedLines.length === 0) {
+      await session.abortTransaction();
+      return res.status(400).json({ success: false, message: 'At least one valid product line is required' });
+    }
 
     adjustment.locationId = resolvedLocationId;
     adjustment.adjustmentDate = date ? new Date(date) : adjustment.adjustmentDate;
