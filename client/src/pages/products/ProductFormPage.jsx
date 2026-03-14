@@ -34,15 +34,26 @@ export default function ProductFormPage() {
       reset({
         name: product.name,
         sku: product.sku || product.code,
-        category: product.category?._id || product.category,
-        unitOfMeasure: product.unitOfMeasure,
-        perUnitCost: product.perUnitCost,
-        reorderPoint: product.reorderPoint,
-        maxStock: product.maxStock,
-        description: product.description,
+        categoryId: product.categoryId?._id || product.categoryId || '',
+        uom: product.uom || 'units',
       })
     }
   }, [product, reset])
+
+  const onSubmit = (data) => {
+    const payload = {
+      name: data.name,
+      sku: data.sku,
+      categoryId: data.categoryId,
+      uom: data.uom,
+    }
+
+    if (isNew && data.initialStock !== undefined && data.initialStock !== '') {
+      payload.initialStock = Number(data.initialStock)
+    }
+
+    mutation.mutate(payload)
+  }
 
   const mutation = useMutation({
     mutationFn: (data) => isNew ? productService.create(data) : productService.update(id, data),
@@ -62,7 +73,7 @@ export default function ProductFormPage() {
         <h1 className="text-2xl font-bold text-gray-900">{isNew ? 'New Product' : 'Edit Product'}</h1>
         <div className="flex items-center gap-3">
           <Button variant="secondary" onClick={() => navigate('/products')}>Discard</Button>
-          <Button onClick={handleSubmit((d) => mutation.mutate(d))} loading={mutation.isPending}>Save Product</Button>
+          <Button onClick={handleSubmit(onSubmit)} loading={mutation.isPending}>Save Product</Button>
         </div>
       </div>
 
@@ -82,42 +93,24 @@ export default function ProductFormPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Category *</label>
-            <select {...register('category', { required: 'Category is required' })} className="input-field">
+            <select {...register('categoryId', { required: 'Category is required' })} className="input-field">
               <option value="">Select category...</option>
               {(categories || []).map((c) => <option key={c._id || c.id} value={c._id || c.id}>{c.name}</option>)}
             </select>
-            {errors.category && <p className="text-xs text-red-500 mt-1">{errors.category.message}</p>}
+            {errors.categoryId && <p className="text-xs text-red-500 mt-1">{errors.categoryId.message}</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit of Measure</label>
-            <select {...register('unitOfMeasure')} className="input-field">
+            <select {...register('uom')} className="input-field">
               {UOM_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Per Unit Cost</label>
-            <input type="number" {...register('perUnitCost', { min: 0 })} className="input-field" placeholder="0.00" step="0.01" />
-          </div>
           {isNew && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Initial Stock</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Initial Stock (optional)</label>
               <input type="number" {...register('initialStock', { min: 0 })} className="input-field" placeholder="0" min="0" />
             </div>
           )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Reorder Point</label>
-            <input type="number" {...register('reorderPoint', { min: 0 })} className="input-field" placeholder="0" min="0" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Max Stock</label>
-            <input type="number" {...register('maxStock', { min: 0 })} className="input-field" placeholder="0" min="0" />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-            <textarea {...register('description', { maxLength: { value: 500, message: 'Max 500 chars' } })}
-              className="input-field" rows={3} placeholder="Product description..." />
-            {errors.description && <p className="text-xs text-red-500 mt-1">{errors.description.message}</p>}
-          </div>
         </div>
       </form>
     </div>

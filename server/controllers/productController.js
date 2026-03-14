@@ -57,7 +57,23 @@ exports.getProducts = async (req, res, next) => {
  */
 exports.createProduct = async (req, res, next) => {
   try {
-    const product = await Product.create(req.body);
+    const {
+      name,
+      sku,
+      categoryId,
+      uom,
+      initialStock,
+    } = req.body;
+
+    const payload = {
+      name,
+      sku,
+      categoryId: categoryId || null,
+      uom: uom || 'units',
+      initialStock: Number(initialStock || 0),
+    };
+
+    const product = await Product.create(payload);
     res.status(201).json({ success: true, data: product });
   } catch (error) {
     next(error);
@@ -90,7 +106,24 @@ exports.getProduct = async (req, res, next) => {
  */
 exports.updateProduct = async (req, res, next) => {
   try {
-    const product = await Product.findByIdAndUpdate(req.params.id, req.body, {
+    const {
+      name,
+      sku,
+      categoryId,
+      uom,
+    } = req.body;
+
+    const payload = {
+      name,
+      sku,
+      categoryId: categoryId || null,
+      uom,
+    };
+
+    // Remove undefined keys so partial updates remain valid.
+    Object.keys(payload).forEach((key) => payload[key] === undefined && delete payload[key]);
+
+    const product = await Product.findByIdAndUpdate(req.params.id, payload, {
       new: true,
       runValidators: true,
     });
