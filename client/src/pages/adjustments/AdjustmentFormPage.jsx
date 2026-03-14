@@ -11,6 +11,23 @@ import Button from '../../components/common/Button'
 import Spinner from '../../components/common/Spinner'
 import toast from 'react-hot-toast'
 
+const createLineId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+const toDateInputValue = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value.split('T')[0] || ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().split('T')[0] || ''
+}
+
+const buildRandomAdjustmentRef = () => `${previewRef('ADJ')}-${Math.random().toString(36).toUpperCase().slice(2, 6)}`
+
 export default function AdjustmentFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -21,7 +38,7 @@ export default function AdjustmentFormPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
   const [lines, setLines] = useState([])
 
-  const { data: locations } = useQuery({
+  const { data: locations = [] } = useQuery({
     queryKey: ['locations'],
     queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || r.data?.locations || r.data || []),
   })
@@ -31,7 +48,12 @@ export default function AdjustmentFormPage() {
     queryFn: () => productService.getAll({ limit: 500 }).then((r) => r.data?.data || r.data?.products || r.data || []),
   })
 
-  const { data: adjustment, isLoading: fetchLoading } = useQuery({
+  const {
+    data: adjustment,
+    isLoading: fetchLoading,
+    isError: fetchError,
+    error: fetchErrorDetails,
+  } = useQuery({
     queryKey: ['adjustment', id],
     queryFn: () => adjustmentService.getById(id).then((r) => r.data?.data || r.data),
     enabled: !isNew,
@@ -41,14 +63,14 @@ export default function AdjustmentFormPage() {
     if (adjustment) {
       reset({
         reference: adjustment.reference,
-        date: (adjustment.adjustmentDate || adjustment.date)?.split('T')[0],
+        date: toDateInputValue(adjustment.adjustmentDate || adjustment.date),
         locationId: adjustment.locationId?._id || adjustment.location?._id || adjustment.locationId || adjustment.location,
       })
       const loadedLines = (adjustment.lines || adjustment.items || []).map((line) => {
         const productObj = typeof line.productId === 'object' ? line.productId : null
         const productId = productObj?._id || line.productId || ''
         return {
-          id: line.id || line._id || crypto.randomUUID(),
+          id: line.id || line._id || createLineId(),
           productId,
           itemName: line.itemName || productObj?.name || line.productName || '',
           sku: line.sku || productObj?.sku || '',
@@ -58,7 +80,8 @@ export default function AdjustmentFormPage() {
       })
       setLines(loadedLines)
     } else if (isNew) {
-      reset({ reference: previewRef('ADJ'), date: new Date().toISOString().split('T')[0], locationId: '' })
+      reset({ reference: buildRandomAdjustmentRef(), date: new Date().toISOString().split('T')[0], locationId: '' })
+      setLines([])
     }
   }, [adjustment, isNew, reset])
 
@@ -102,9 +125,16 @@ export default function AdjustmentFormPage() {
   }
 
   if (fetchLoading && !isNew) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
+  if (fetchError && !isNew) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        Failed to load adjustment details. {fetchErrorDetails?.response?.data?.message || fetchErrorDetails?.message || 'Please retry.'}
+      </div>
+    )
+  }
 
   const addLine = () => {
-    setLines([...lines, { id: crypto.randomUUID(), productId: '', itemName: '', sku: '', recordedQty: 0, updatedQty: 0 }])
+    setLines([...lines, { id: createLineId(), productId: '', itemName: '', sku: '', recordedQty: 0, updatedQty: 0 }])
   }
 
   const updateLine = (lineId, field, value) => {
@@ -154,7 +184,6 @@ export default function AdjustmentFormPage() {
               {...register('reference', { required: 'Reference is required' })}
               className="input-field"
               placeholder="Enter reference"
-              disabled={isReadOnly}
             />
             {errors.reference && <p className="text-xs text-red-500 mt-1">{errors.reference.message}</p>}
           </div>

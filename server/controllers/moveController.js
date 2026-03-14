@@ -1,22 +1,51 @@
 const StockMove = require('../models/StockMove');
 
+const firstNonEmpty = (...values) => {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+};
+
+const resolveLocationLabel = (location) => {
+  if (!location) return null;
+  if (typeof location === 'string') return location.trim() || null;
+  return firstNonEmpty(location.name, location.shortCode);
+};
+
 const formatMoveForUi = (move) => {
   const isReceipt = move.moveType === 'IN';
   const isInternal = move.moveType === 'INTERNAL';
+  const isDelivery = move.moveType === 'OUT';
+
+  const partyLabel = firstNonEmpty(move.pickingId?.supplierOrCustomer, move.supplierOrCustomer);
+  const fromLocationLabel = firstNonEmpty(
+    resolveLocationLabel(move.fromLocationId),
+    resolveLocationLabel(move.fromLocation),
+    move.from
+  );
+  const toLocationLabel = firstNonEmpty(
+    resolveLocationLabel(move.toLocationId),
+    resolveLocationLabel(move.toLocation),
+    move.to
+  );
+  const adjustmentLocationLabel = resolveLocationLabel(move.adjustmentId?.locationId);
 
   const fromDisplay = isReceipt
-    ? (move.pickingId?.supplierOrCustomer || 'Vendor')
-    : (move.fromLocationId?.name || '--');
+    ? (partyLabel || fromLocationLabel || 'Vendor')
+    : (fromLocationLabel || adjustmentLocationLabel || '--');
 
   const toDisplay = isReceipt
-    ? '--'
+    ? (toLocationLabel || '--')
+    : isDelivery
+      ? (partyLabel || toLocationLabel || '--')
     : isInternal
-      ? (move.toLocationId?.name || '--')
-      : (move.toLocationId?.name || '--');
+      ? (toLocationLabel || '--')
+      : (toLocationLabel || adjustmentLocationLabel || '--');
 
   return {
     ...move,
-    productName: move.productId?.name || '--',
+    productName: firstNonEmpty(move.productId?.name, move.productName) || '--',
     product: move.productId || null,
     fromLocation: move.fromLocationId || null,
     toLocation: move.toLocationId || null,
@@ -34,6 +63,7 @@ exports.getMoves = async (req, res, next) => {
   try {
     const {
       moveType,
+      type,
       product,
       dateFrom,
       dateTo,
@@ -45,7 +75,13 @@ exports.getMoves = async (req, res, next) => {
 
     const filter = {};
 
-    if (moveType) filter.moveType = moveType;
+    const requestedType = moveType || type;
+
+    if (req.user?.role === 'staff') {
+      filter.moveType = 'INTERNAL';
+    }
+
+    if (requestedType && req.user?.role !== 'staff') filter.moveType = requestedType;
     if (product) filter.productId = product;
     if (search) {
       filter.reference = { $regex: search, $options: 'i' };
@@ -62,7 +98,11 @@ exports.getMoves = async (req, res, next) => {
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
       .populate('pickingId', 'reference pickingType supplierOrCustomer')
-      .populate('adjustmentId', 'reference')
+      .populate({
+        path: 'adjustmentId',
+        select: 'reference locationId',
+        populate: { path: 'locationId', select: 'name shortCode' },
+      })
       .populate('createdBy', 'name email')
       .sort(sort)
       .skip((parseInt(page) - 1) * parseInt(limit))
@@ -93,12 +133,21 @@ exports.getMoves = async (req, res, next) => {
  */
 exports.getMove = async (req, res, next) => {
   try {
-    const move = await StockMove.findById(req.params.id)
+    const filter = { _id: req.params.id };
+    if (req.user?.role === 'staff') {
+      filter.moveType = 'INTERNAL';
+    }
+
+    const move = await StockMove.findOne(filter)
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
       .populate('pickingId', 'reference pickingType status supplierOrCustomer')
-      .populate('adjustmentId', 'reference')
+      .populate({
+        path: 'adjustmentId',
+        select: 'reference locationId',
+        populate: { path: 'locationId', select: 'name shortCode' },
+      })
       .populate('createdBy', 'name email');
 
     if (!move) {
