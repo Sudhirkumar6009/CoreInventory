@@ -237,7 +237,6 @@ exports.validateTransfer = async (req, res, next) => {
 
       const srcQuant = await StockQuant.findOne({
         productId: line.productId,
-        locationId: line.fromLocationId,
       }).session(session);
 
       const available = srcQuant ? srcQuant.quantity : 0;
@@ -257,14 +256,14 @@ exports.validateTransfer = async (req, res, next) => {
 
       // Decrease at source
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.fromLocationId },
+        { productId: line.productId },
         { $inc: { quantity: -qtyToTransfer } },
         { session }
       );
 
       // Increase at destination
       await StockQuant.findOneAndUpdate(
-        { productId: line.productId, locationId: line.toLocationId },
+        { productId: line.productId },
         { $inc: { quantity: qtyToTransfer } },
         { upsert: true, session }
       );

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const StockQuant = require('../models/StockQuant');
@@ -86,6 +87,9 @@ exports.getProducts = async (req, res, next) => {
  * @access  Private (Manager)
  */
 exports.createProduct = async (req, res, next) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const {
       name,
@@ -103,10 +107,29 @@ exports.createProduct = async (req, res, next) => {
       initialStock: Number(initialStock || 0),
     };
 
-    const product = await Product.create(payload);
+    const [product] = await Product.create([payload], { session });
+
+    if (payload.initialStock > 0) {
+      await StockQuant.findOneAndUpdate(
+        { productId: product._id },
+        {
+          $set: {
+            quantity: payload.initialStock,
+            reservedQty: 0,
+          },
+        },
+        { upsert: true, session }
+      );
+    }
+
+    await session.commitTransaction();
+
     res.status(201).json({ success: true, data: product });
   } catch (error) {
+    await session.abortTransaction();
     next(error);
+  } finally {
+    session.endSession();
   }
 };
 
@@ -210,25 +233,17 @@ exports.getProductStock = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    const stockQuants = await StockQuant.find({ productId: product._id })
-      .populate({
-        path: 'locationId',
-        populate: { path: 'warehouseId', select: 'name shortCode' },
-      })
-      .lean();
-
-    const totalReserved = stockQuants.reduce((sum, sq) => sum + sq.reservedQty, 0);
+    const stockQuant = await StockQuant.findOne({ productId: product._id }).lean();
+    const totalReserved = stockQuant?.reservedQty || 0;
+    const totalOnHand = stockQuant?.quantity || 0;
 
     res.json({
       success: true,
       data: {
         product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
+        totalOnHand,
         totalReserved,
-        byLocation: stockQuants.map((sq) => ({
-          location: sq.locationId,
-          quantity: sq.quantity,
-          reservedQty: sq.reservedQty,
-        })),
+        byLocation: [],
       },
     });
   } catch (error) {
