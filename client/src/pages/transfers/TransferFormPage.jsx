@@ -226,24 +226,7 @@ export default function TransferFormPage() {
           {isNew ? "New Transfer" : transfer?.reference || "Transfer"}
         </h1>
         <div className="flex items-center gap-3">
-          {isNew && (
-            <>
-              <Button
-                variant="secondary"
-                onClick={() => navigate("/operations/transfers")}
-              >
-                Discard
-              </Button>
-              <Button
-                onClick={handleSubmit(onSave)}
-                loading={saveMutation.isPending}
-                disabled={!!sameLocation}
-              >
-                Save
-              </Button>
-            </>
-          )}
-          {!isNew && status === "draft" && (
+          {!isReadOnly && (
             <>
               <Button
                 variant="secondary"
