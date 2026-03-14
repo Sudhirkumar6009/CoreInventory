@@ -52,7 +52,7 @@ export default function ReceiptFormPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const isNew = id === "new";
+  const isNew = !id || id === "new" || id === "undefined";
   useDocumentTitle(isNew ? "New Receipt" : `Receipt ${id}`);
 
   const {
@@ -76,13 +76,11 @@ export default function ReceiptFormPage() {
     if (receipt) {
       reset({
         reference: receipt.reference,
-        supplier: receipt.supplierOrCustomer || receipt.supplier || "",
+        supplier: receipt.supplier || receipt.supplierOrCustomer,
         scheduledDate: receipt.scheduledDate?.split("T")[0],
-        sourceDocument: receipt.sourceDocument || "",
-        notes: receipt.notes || "",
+        sourceDocument: receipt.sourceDocument,
       });
-      const apiLines = receipt.moveLines || receipt.lines || receipt.items || [];
-      setLines(apiLines.map(normalizeLineFromApi));
+      setLines(receipt.moveLines || receipt.lines || receipt.items || []);
       setStatus(receipt.status || "draft");
     } else if (isNew) {
       reset({
@@ -96,8 +94,14 @@ export default function ReceiptFormPage() {
   }, [receipt, isNew, reset]);
 
   const saveMutation = useMutation({
-    mutationFn: (data) =>
-      isNew ? receiptService.create(data) : receiptService.update(id, data),
+    mutationFn: (data) => {
+      if (!isNew && !id) {
+        throw new Error("Receipt id is missing for update");
+      }
+      return isNew
+        ? receiptService.create(data)
+        : receiptService.update(id, data);
+    },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       toast.success("Receipt saved");
@@ -105,8 +109,7 @@ export default function ReceiptFormPage() {
       const newId = created?._id || created?.id || id;
       if (isNew) navigate(`/operations/receipts/${newId}`, { replace: true });
     },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Save failed"),
+    onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
 
   const validateMutation = useMutation({
@@ -148,15 +151,25 @@ export default function ReceiptFormPage() {
   });
 
   const onSave = (formData) => {
-    saveMutation.mutate({
+    const moveLines = (lines || []).map((line) => ({
+      productId: line.productId,
+      description: line.description || "",
+      qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
+      qtyDone: Number(line.qtyDone || 0),
+      uom: line.uom || "units",
+      toLocationId: line.toLocationId || null,
+    }));
+
+    const payload = {
       reference: formData.reference,
       supplierOrCustomer: formData.supplier,
       scheduledDate: formData.scheduledDate,
       sourceDocument: formData.sourceDocument,
-      notes: formData.notes,
       status: "draft",
-      moveLines: buildMoveLines(lines),
-    });
+      moveLines,
+    };
+
+    saveMutation.mutate(payload);
   };
 
   const isReadOnly = status === "done" || status === "cancelled";
@@ -317,7 +330,8 @@ export default function ReceiptFormPage() {
           Product Lines
         </h2>
         <div className="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-3">
-          Select the <strong>destination location</strong> for each product line — stock will be added there when you validate.
+          Select the <strong>destination location</strong> for each product line
+          — stock will be added there when you validate.
         </div>
         <LineItemTable
           lines={lines}

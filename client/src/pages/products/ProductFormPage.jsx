@@ -252,6 +252,7 @@ export default function ProductFormPage() {
                 className="input-field"
                 placeholder="0"
                 min="0"
+                step="0.01"
               />
             </div>
           )}

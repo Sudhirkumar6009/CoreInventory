@@ -102,9 +102,11 @@ exports.getProducts = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
-    const productIds = products.map((product) => product._id);
-    const stockRows = productIds.length
-      ? await StockQuant.aggregate([
+    const productIds = products.map((p) => p._id);
+    let stockMap = new Map();
+
+    if (productIds.length > 0) {
+      const stockSummary = await StockQuant.aggregate([
         { $match: { productId: { $in: productIds } } },
         {
           $group: {
@@ -113,24 +115,32 @@ exports.getProducts = async (req, res, next) => {
             reservedQty: { $sum: "$reservedQty" },
           },
         },
-      ])
-      : [];
+      ]);
 
-    const stockByProductId = stockRows.reduce((acc, row) => {
-      acc[row._id.toString()] = {
-        onHand: toNumberOrDefault(row.onHand, 0),
-        reservedQty: toNumberOrDefault(row.reservedQty, 0),
+      stockMap = new Map(
+        stockSummary.map((row) => [
+          String(row._id),
+          { onHand: row.onHand || 0, reservedQty: row.reservedQty || 0 },
+        ]),
+      );
+    }
+
+    const productsWithStock = products.map((product) => {
+      const stock = stockMap.get(String(product._id)) || {
+        onHand: 0,
+        reservedQty: 0,
       };
-      return acc;
-    }, {});
-
-    const enrichedProducts = products.map((product) =>
-      enrichProduct(product, stockByProductId[product._id.toString()]),
-    );
+      return {
+        ...product,
+        onHand: stock.onHand,
+        reservedQty: stock.reservedQty,
+        freeToUse: stock.onHand - stock.reservedQty,
+      };
+    });
 
     res.json({
       success: true,
-      data: enrichedProducts,
+      data: productsWithStock,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -309,14 +319,25 @@ exports.getProductStock = async (req, res, next) => {
       })
       .lean();
 
-    const totalOnHand = stockQuants.reduce((sum, sq) => sum + (sq.quantity || 0), 0);
-    const totalReserved = stockQuants.reduce((sum, sq) => sum + (sq.reservedQty || 0), 0);
+    const totalOnHand = stockQuants.reduce(
+      (sum, sq) => sum + (sq.quantity || 0),
+      0,
+    );
+    const totalReserved = stockQuants.reduce(
+      (sum, sq) => sum + (sq.reservedQty || 0),
+      0,
+    );
     const freeToUse = totalOnHand - totalReserved;
 
     res.json({
       success: true,
       data: {
-        product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
+        product: {
+          id: product._id,
+          name: product.name,
+          sku: product.sku,
+          uom: product.uom,
+        },
         totalOnHand,
         totalReserved,
         freeToUse,

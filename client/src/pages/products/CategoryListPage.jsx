@@ -52,7 +52,6 @@ export default function CategoryListPage() {
     { key: 'name', label: 'Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
     { key: 'shortCode', label: 'Short Code' },
     { key: 'description', label: 'Description', render: (r) => r.description || '--' },
-    { key: 'productCount', label: '# Products', render: (r) => r.productCount ?? '--' },
     {
       key: 'actions', label: '', render: (r) => isManager ? (
         <div className="flex items-center gap-1">
