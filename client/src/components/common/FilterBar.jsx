@@ -1,9 +1,13 @@
-import { useNavigate } from 'react-router-dom'
-import { PlusIcon, FunnelIcon, Squares2X2Icon } from '@heroicons/react/24/outline'
-import Button from './Button'
-import SearchBar from './SearchBar'
-import ViewToggle from './ViewToggle'
-import { STATUS_OPTIONS } from '../../constants'
+import { useNavigate } from "react-router-dom";
+import {
+  PlusIcon,
+  FunnelIcon,
+  Squares2X2Icon,
+} from "@heroicons/react/24/outline";
+import Button from "./Button";
+import SearchBar from "./SearchBar";
+import ViewToggle from "./ViewToggle";
+import { STATUS_OPTIONS } from "../../constants";
 
 export default function FilterBar({
   module,
@@ -11,12 +15,12 @@ export default function FilterBar({
   onSearch,
   statusFilter,
   onStatusChange,
-  viewMode = 'list',
+  viewMode = "list",
   onViewChange,
   hideNew = false,
   extraFilters,
 }) {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   return (
     <div className="flex flex-wrap items-center gap-3 mb-5">
@@ -27,17 +31,11 @@ export default function FilterBar({
         </Button>
       )}
 
-      <SearchBar
-        onSearch={onSearch}
-        placeholder={`Search ${module}...`}
-        className="flex-1 min-w-[200px] max-w-sm"
-      />
-
       <div className="flex items-center gap-2 ml-auto">
         {onStatusChange && (
           <div className="relative">
             <select
-              value={statusFilter || ''}
+              value={statusFilter || ""}
               onChange={(e) => onStatusChange(e.target.value)}
               className="input-field pl-8 pr-4 py-2 text-sm min-w-[140px]"
             >
@@ -54,10 +52,8 @@ export default function FilterBar({
 
         {extraFilters}
 
-        {onViewChange && (
-          <ViewToggle mode={viewMode} onChange={onViewChange} />
-        )}
+        {onViewChange && <ViewToggle mode={viewMode} onChange={onViewChange} />}
       </div>
     </div>
-  )
+  );
 }

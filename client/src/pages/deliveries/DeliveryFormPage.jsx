@@ -4,7 +4,9 @@ import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { deliveryService } from "../../api/deliveryService";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
+import { useRole } from "../../hooks/useRole";
 import { previewRef } from "../../utils/generateReference";
+import { STATUS_OPTIONS } from "../../constants";
 import Button from "../../components/common/Button";
 import StatusStepper from "../../components/common/StatusStepper";
 import ConfirmDialog from "../../components/common/ConfirmDialog";
@@ -34,12 +36,12 @@ const normalizeLines = (rawLines = []) => {
 };
 
 export default function DeliveryFormPage() {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const { isManager } = useRole()
-  const isNew = !id || id === 'new' || id === 'undefined'
-  useDocumentTitle(isNew ? 'New Delivery' : `Delivery ${id}`)
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { isManager } = useRole();
+  const isNew = !id || id === "new" || id === "undefined";
+  useDocumentTitle(isNew ? "New Delivery" : `Delivery ${id}`);
 
   const {
     register,
@@ -62,22 +64,28 @@ export default function DeliveryFormPage() {
     if (delivery) {
       reset({
         reference: delivery.reference,
-        scheduledDate: delivery.scheduledDate?.split('T')[0],
+        scheduledDate: delivery.scheduledDate?.split("T")[0],
         carrier: delivery.carrier,
-      })
-      setLines(normalizeLines(delivery.moveLines || delivery.lines || delivery.items || []))
-      setStatus(delivery.status || 'draft')
+      });
+      setLines(
+        normalizeLines(
+          delivery.moveLines || delivery.lines || delivery.items || [],
+        ),
+      );
+      setStatus(delivery.status || "draft");
     } else if (isNew) {
-      reset({ reference: previewRef('OUT'), scheduledDate: '', carrier: '' })
+      reset({ reference: previewRef("OUT"), scheduledDate: "", carrier: "" });
     }
   }, [delivery, isNew, reset]);
 
   const saveMutation = useMutation({
     mutationFn: (data) => {
       if (!isNew && !id) {
-        throw new Error('Delivery id is missing for update')
+        throw new Error("Delivery id is missing for update");
       }
-      return isNew ? deliveryService.create(data) : deliveryService.update(id, data)
+      return isNew
+        ? deliveryService.create(data)
+        : deliveryService.update(id, data);
     },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["deliveries"] });
@@ -156,11 +164,11 @@ export default function DeliveryFormPage() {
 
     saveMutation.mutate({
       ...formData,
-      reference: formData.reference || previewRef('OUT'),
+      reference: formData.reference || previewRef("OUT"),
       moveLines,
-      status: isManager ? status : 'draft',
-    })
-  }
+      status: isManager ? status : "draft",
+    });
+  };
 
   const isReadOnly = status === "done" || status === "cancelled";
 
@@ -299,7 +307,9 @@ export default function DeliveryFormPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Status
+            </label>
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
@@ -307,7 +317,9 @@ export default function DeliveryFormPage() {
               disabled={!isManager}
             >
               {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
           </div>
