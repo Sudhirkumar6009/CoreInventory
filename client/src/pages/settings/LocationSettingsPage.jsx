@@ -30,15 +30,24 @@ export default function LocationSettingsPage() {
     if (selected && !selected._new) {
       setFormData({
         name: selected.name || '', shortCode: selected.shortCode || '',
-        warehouse: selected.warehouse?._id || selected.warehouse || '',
+        warehouse: selected.warehouseId?._id || selected.warehouseId || selected.warehouse?._id || selected.warehouse || '',
       })
     }
   }, [selected])
 
+  const buildPayload = (data) => ({
+    name: data.name,
+    shortCode: data.shortCode,
+    warehouseId: data.warehouse,
+  })
+
   const saveMutation = useMutation({
-    mutationFn: (d) => selected?._id || selected?.id
-      ? warehouseService.updateLocation(selected._id || selected.id, d)
-      : warehouseService.createLocation(d),
+    mutationFn: (d) => {
+      const payload = buildPayload(d)
+      return selected?._id || selected?.id
+        ? warehouseService.updateLocation(selected._id || selected.id, payload)
+        : warehouseService.createLocation(payload)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['locations'] })
       toast.success('Location saved')

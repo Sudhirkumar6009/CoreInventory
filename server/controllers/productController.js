@@ -150,32 +150,18 @@ exports.getProducts = async (req, res, next) => {
  */
 exports.createProduct = async (req, res, next) => {
   try {
-    const payload = normalizeProductPayload(req.body);
+    const { name, sku, categoryId, uom, initialStock } = req.body;
+
+    const payload = {
+      name,
+      sku,
+      categoryId: categoryId || null,
+      uom: uom || "units",
+      initialStock: Number(initialStock || 0),
+    };
+
     const product = await Product.create(payload);
-
-    // If initialStock > 0, create a StockQuant record at the first available location
-    let stockData = null;
-    const initialStock = toNumberOrDefault(payload.initialStock, 0);
-    if (initialStock > 0) {
-      stockData = { onHand: initialStock, reservedQty: 0 };
-      const defaultLocation = await Location.findOne().sort("createdAt");
-      if (defaultLocation) {
-        await StockQuant.findOneAndUpdate(
-          { productId: product._id, locationId: defaultLocation._id },
-          { $inc: { quantity: initialStock } },
-          { upsert: true, new: true },
-        );
-      }
-    }
-
-    // Return enriched product with stock and perUnitCost
-    const enrichedProduct = await Product.findById(product._id)
-      .populate("categoryId", "name shortCode")
-      .lean();
-
-    res
-      .status(201)
-      .json({ success: true, data: enrichProduct(enrichedProduct, stockData) });
+    res.status(201).json({ success: true, data: product });
   } catch (error) {
     next(error);
   }
@@ -226,7 +212,19 @@ exports.getProduct = async (req, res, next) => {
  */
 exports.updateProduct = async (req, res, next) => {
   try {
-    const payload = normalizeProductPayload(req.body, true);
+    const { name, sku, categoryId, uom } = req.body;
+
+    const payload = {
+      name,
+      sku,
+      categoryId: categoryId || null,
+      uom,
+    };
+
+    // Remove undefined keys so partial updates remain valid.
+    Object.keys(payload).forEach(
+      (key) => payload[key] === undefined && delete payload[key],
+    );
 
     const product = await Product.findByIdAndUpdate(req.params.id, payload, {
       new: true,
