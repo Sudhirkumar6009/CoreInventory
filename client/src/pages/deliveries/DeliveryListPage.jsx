@@ -1,0 +1,62 @@
+import { useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { deliveryService } from '../../api/deliveryService'
+import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import FilterBar from '../../components/common/FilterBar'
+import Table from '../../components/common/Table'
+import Pagination from '../../components/common/Pagination'
+import Badge from '../../components/common/Badge'
+import { formatDate } from '../../utils/formatDate'
+
+export default function DeliveryListPage() {
+  useDocumentTitle('Deliveries')
+  const navigate = useNavigate()
+  const [filters, setFilters] = useState({ status: '', search: '', page: 1 })
+  const [viewMode, setViewMode] = useState('list')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['deliveries', filters],
+    queryFn: () => deliveryService.getAll({ ...filters, limit: 20 }).then((r) => r.data),
+    keepPreviousData: true,
+  })
+
+  const columns = [
+    { key: 'date', label: 'Date', render: (r) => formatDate(r.scheduledDate || r.date || r.createdAt) },
+    { key: 'reference', label: 'Reference', render: (r) => <span className="font-medium text-gray-900">{r.reference}</span> },
+    { key: 'customer', label: 'Customer' },
+    { key: 'scheduledDate', label: 'Scheduled Date', render: (r) => formatDate(r.scheduledDate) },
+    { key: 'sourceDocument', label: 'Source Doc', render: (r) => r.sourceDocument || '--' },
+    { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
+  ]
+
+  const handleSearch = useCallback((search) => {
+    setFilters((f) => ({ ...f, search, page: 1 }))
+  }, [])
+
+  const items = data?.deliveries || data?.items || []
+  const totalPages = data?.totalPages || 1
+
+  return (
+    <div>
+      <h1 className="text-2xl font-bold text-gray-900 mb-5">Deliveries</h1>
+      <FilterBar
+        module="deliveries"
+        newPath="/operations/deliveries/new"
+        onSearch={handleSearch}
+        statusFilter={filters.status}
+        onStatusChange={(s) => setFilters((f) => ({ ...f, status: s, page: 1 }))}
+        viewMode={viewMode}
+        onViewChange={setViewMode}
+      />
+      <Table
+        columns={columns}
+        data={items}
+        loading={isLoading}
+        emptyMessage="No deliveries found."
+        onRowClick={(row) => navigate(`/operations/deliveries/${row._id || row.id}`)}
+      />
+      <Pagination page={filters.page} totalPages={totalPages} onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))} />
+    </div>
+  )
+}
