@@ -34,11 +34,11 @@ const normalizeLines = (rawLines = []) => {
 };
 
 export default function DeliveryFormPage() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const isNew = id === "new";
-  useDocumentTitle(isNew ? "New Delivery" : `Delivery ${id}`);
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const isNew = !id || id === 'new' || id === 'undefined'
+  useDocumentTitle(isNew ? 'New Delivery' : `Delivery ${id}`)
 
   const {
     register,
@@ -61,33 +61,24 @@ export default function DeliveryFormPage() {
     if (delivery) {
       reset({
         reference: delivery.reference,
-        customer: delivery.supplierOrCustomer || delivery.customer || "",
-        scheduledDate: delivery.scheduledDate?.split("T")[0],
-        carrier: delivery.carrier || "",
-        sourceDocument: delivery.sourceDocument || "",
-        notes: delivery.notes || "",
-      });
-      setLines(
-        normalizeLines(
-          delivery.moveLines || delivery.lines || delivery.items || [],
-        ),
-      );
-      setStatus(delivery.status || "draft");
+        customer: delivery.customer,
+        scheduledDate: delivery.scheduledDate?.split('T')[0],
+        carrier: delivery.carrier,
+      })
+      setLines(normalizeLines(delivery.moveLines || delivery.lines || delivery.items || []))
+      setStatus(delivery.status || 'draft')
     } else if (isNew) {
-      reset({
-        reference: previewRef("OUT"),
-        customer: "",
-        scheduledDate: new Date().toISOString().split("T")[0],
-        carrier: "",
-        sourceDocument: "",
-        notes: "",
-      });
+      reset({ reference: previewRef('OUT'), customer: '', scheduledDate: '', carrier: '' })
     }
   }, [delivery, isNew, reset]);
 
   const saveMutation = useMutation({
-    mutationFn: (data) =>
-      isNew ? deliveryService.create(data) : deliveryService.update(id, data),
+    mutationFn: (data) => {
+      if (!isNew && !id) {
+        throw new Error('Delivery id is missing for update')
+      }
+      return isNew ? deliveryService.create(data) : deliveryService.update(id, data)
+    },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["deliveries"] });
       toast.success("Delivery saved");
@@ -163,8 +154,13 @@ export default function DeliveryFormPage() {
       }))
       .filter((line) => line.productId && line.qtyOrdered > 0);
 
-    saveMutation.mutate({ ...formData, moveLines, status: "draft" });
-  };
+    saveMutation.mutate({
+      ...formData,
+      reference: formData.reference || previewRef('OUT'),
+      moveLines,
+      status: 'draft',
+    })
+  }
 
   const isReadOnly = status === "done" || status === "cancelled";
 
@@ -299,29 +295,6 @@ export default function DeliveryFormPage() {
               {...register("carrier")}
               className="input-field"
               placeholder="Carrier / courier name"
-              disabled={isReadOnly}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Source Document
-            </label>
-            <input
-              {...register("sourceDocument")}
-              className="input-field"
-              placeholder="Sales Order / SO number"
-              disabled={isReadOnly}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Notes
-            </label>
-            <textarea
-              {...register("notes")}
-              className="input-field"
-              rows={2}
-              placeholder="Optional notes..."
               disabled={isReadOnly}
             />
           </div>

@@ -66,27 +66,17 @@ export default function ReceiptFormPage() {
     if (receipt) {
       reset({
         reference: receipt.reference,
-        responsibleUser: receipt.createdBy?.email || currentUser?.email || "",
-        scheduledDate: receipt.scheduledDate?.split("T")[0],
-        sourceDocument: receipt.sourceDocument,
-        notes: receipt.notes || "",
-      });
-      setLines(
-        normalizeLines(
-          receipt.moveLines || receipt.lines || receipt.items || [],
-        ),
-      );
-      setStatus(receipt.status || "draft");
+        responsibleUser: receipt.createdBy?.email || currentUser?.email || '',
+        scheduledDate: receipt.scheduledDate?.split('T')[0],
+      })
+      setLines(normalizeLines(receipt.moveLines || receipt.lines || receipt.items || []))
+      setStatus(receipt.status || 'draft')
     } else if (isNew) {
       reset({
-        reference: previewRef("IN"),
-        responsibleUser: currentUser?.email || "",
-        scheduledDate: new Date().toISOString().split("T")[0],
-        sourceDocument: "",
-        notes: "",
-      });
-      setLines([]);
-      setStatus("draft");
+        reference: previewRef('IN'),
+        responsibleUser: currentUser?.email || '',
+        scheduledDate: '',
+      })
     }
   }, [receipt, isNew, reset, currentUser?.email]);
 
@@ -183,9 +173,7 @@ export default function ReceiptFormPage() {
     saveMutation.mutate({
       reference: formData.reference,
       scheduledDate: formData.scheduledDate,
-      sourceDocument: formData.sourceDocument,
-      notes: formData.notes,
-      status: "draft",
+      status: 'draft',
       moveLines,
     });
   };
@@ -309,31 +297,6 @@ export default function ReceiptFormPage() {
                 {errors.scheduledDate.message}
               </p>
             )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Source Document
-            </label>
-            <input
-              {...register("sourceDocument")}
-              className="input-field"
-              placeholder="PO number or reference"
-              disabled={isReadOnly}
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Notes
-            </label>
-            <textarea
-              {...register("notes")}
-              className="input-field"
-              rows={2}
-              placeholder="Optional notes..."
-              disabled={isReadOnly}
-            />
           </div>
         </div>
       </form>

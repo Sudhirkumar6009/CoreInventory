@@ -22,11 +22,6 @@ const stockPickingSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    sourceDocument: {
-      type: String,
-      trim: true,
-      default: '',
-    },
     status: {
       type: String,
       enum: ['draft', 'waiting', 'ready', 'done', 'cancelled'],

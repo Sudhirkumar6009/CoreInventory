@@ -19,7 +19,6 @@ exports.getTransfers = async (req, res, next) => {
     if (search) {
       filter.$or = [
         { reference: { $regex: search, $options: 'i' } },
-        { sourceDocument: { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -48,7 +47,7 @@ exports.getTransfers = async (req, res, next) => {
  */
 exports.createTransfer = async (req, res, next) => {
   try {
-    const { reference: incomingRef, scheduledDate, sourceDocument, notes, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -78,7 +77,6 @@ exports.createTransfer = async (req, res, next) => {
       reference,
       pickingType: 'INTERNAL',
       scheduledDate,
-      sourceDocument,
       notes,
       status: 'draft',
       createdBy: req.user._id,
@@ -160,7 +158,7 @@ exports.updateTransfer = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Cannot edit a ${transfer.status} transfer` });
     }
 
-    const { reference: incomingRef, scheduledDate, sourceDocument, notes, status, moveLines } = req.body;
+    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
@@ -185,7 +183,6 @@ exports.updateTransfer = async (req, res, next) => {
     }
 
     if (scheduledDate !== undefined) transfer.scheduledDate = scheduledDate;
-    if (sourceDocument !== undefined) transfer.sourceDocument = sourceDocument;
     if (notes !== undefined) transfer.notes = notes;
     if (status) transfer.status = status;
 
