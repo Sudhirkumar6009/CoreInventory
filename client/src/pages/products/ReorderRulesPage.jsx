@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { productService } from '../../api/productService'
 import { warehouseService } from '../../api/warehouseService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import Table from '../../components/common/Table'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
@@ -13,6 +14,7 @@ import toast from 'react-hot-toast'
 export default function ReorderRulesPage() {
   useDocumentTitle('Reorder Rules')
   const queryClient = useQueryClient()
+  const { isManager } = useRole()
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState(null)
   const [showDelete, setShowDelete] = useState(null)
@@ -71,12 +73,12 @@ export default function ReorderRulesPage() {
     { key: 'maxQty', label: 'Max Qty' },
     { key: 'leadTimeDays', label: 'Lead Time (days)' },
     {
-      key: 'actions', label: '', render: (r) => (
+      key: 'actions', label: '', render: (r) => isManager ? (
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); openEdit(r) }} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600"><PencilIcon className="w-4 h-4" /></button>
           <button onClick={(e) => { e.stopPropagation(); setShowDelete(r) }} className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4" /></button>
         </div>
-      ),
+      ) : null,
     },
   ]
 
@@ -84,7 +86,7 @@ export default function ReorderRulesPage() {
     <div>
       <div className="flex items-center justify-between mb-5">
         <h1 className="text-2xl font-bold text-gray-900">Reorder Rules</h1>
-        <Button onClick={openNew}><PlusIcon className="w-4 h-4" /> New Rule</Button>
+        {isManager && <Button onClick={openNew}><PlusIcon className="w-4 h-4" /> New Rule</Button>}
       </div>
       <Table columns={columns} data={rules || []} loading={isLoading} emptyMessage="No reorder rules found." />
 

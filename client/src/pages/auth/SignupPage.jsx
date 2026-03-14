@@ -89,8 +89,8 @@ export default function SignupPage() {
         <label className="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
         <select {...register('role', { required: 'Role is required' })} className="input-field">
           <option value="">Select role...</option>
-          <option value="Manager">Manager</option>
-          <option value="Staff">Staff</option>
+          <option value="manager">Manager</option>
+          <option value="staff">Staff</option>
         </select>
         {errors.role && <p className="text-xs text-red-500 mt-1">{errors.role.message}</p>}
       </div>

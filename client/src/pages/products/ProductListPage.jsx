@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { productService } from '../../api/productService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import FilterBar from '../../components/common/FilterBar'
 import Table from '../../components/common/Table'
 import Pagination from '../../components/common/Pagination'
@@ -12,6 +13,7 @@ import clsx from 'clsx'
 export default function ProductListPage() {
   useDocumentTitle('Products')
   const navigate = useNavigate()
+  const { isManager } = useRole()
   const [searchParams] = useSearchParams()
   const [filters, setFilters] = useState({ search: '', page: 1 })
 
@@ -65,7 +67,7 @@ export default function ProductListPage() {
       <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 mb-5 text-sm text-blue-700">
         Stock quantities update automatically via Receipts, Deliveries, Transfers, and Adjustments.
       </div>
-      <FilterBar module="products" newPath="/products/new" onSearch={handleSearch} />
+      <FilterBar module="products" newPath="/products/new" hideNew={!isManager} onSearch={handleSearch} />
       <Table columns={columns} data={items} loading={isLoading} emptyMessage="No products found."
         onRowClick={(row) => navigate(`/products/${row._id || row.id}/edit`)} />
       <Pagination page={filters.page} totalPages={data?.totalPages || 1} onPageChange={(p) => setFilters((f) => ({ ...f, page: p }))} />

@@ -7,14 +7,18 @@ export const NAV_ITEMS = [
   {
     label: 'Operations',
     children: [
-      { label: 'Receipts', path: '/operations/receipts' },
-      { label: 'Deliveries', path: '/operations/deliveries' },
+      // Manager: manage incoming & outgoing stock
+      { label: 'Receipts', path: '/operations/receipts', roles: ['manager'] },
+      { label: 'Deliveries', path: '/operations/deliveries', roles: ['manager'] },
+      // Both: stock counting & adjustments
       { label: 'Internal Transfers', path: '/operations/transfers' },
       { label: 'Adjustments', path: '/operations/adjustments' },
     ],
   },
   {
+    // Manager only: product catalogue + reorder rules
     label: 'Products',
+    roles: ['manager'],
     children: [
       { label: 'All Products', path: '/products' },
       { label: 'Categories', path: '/products/categories' },
@@ -23,7 +27,9 @@ export const NAV_ITEMS = [
   },
   { label: 'Move History', path: '/operations/moves' },
   {
+    // Manager only: warehouse & location configuration
     label: 'Settings',
+    roles: ['manager'],
     children: [
       { label: 'Warehouses', path: '/settings/warehouses' },
       { label: 'Locations', path: '/settings/locations' },

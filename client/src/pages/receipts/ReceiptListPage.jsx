@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { receiptService } from '../../api/receiptService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
+import { useRole } from '../../hooks/useRole'
 import FilterBar from '../../components/common/FilterBar'
 import Table from '../../components/common/Table'
 import Pagination from '../../components/common/Pagination'
@@ -13,6 +14,7 @@ import clsx from 'clsx'
 export default function ReceiptListPage() {
   useDocumentTitle('Receipts')
   const navigate = useNavigate()
+  const { isManager } = useRole()
   const [filters, setFilters] = useState({ status: '', search: '', page: 1 })
   const [viewMode, setViewMode] = useState('list')
 
@@ -51,6 +53,7 @@ export default function ReceiptListPage() {
       <FilterBar
         module="receipts"
         newPath="/operations/receipts/new"
+        hideNew={!isManager}
         onSearch={handleSearch}
         statusFilter={filters.status}
         onStatusChange={(s) => setFilters((f) => ({ ...f, status: s, page: 1 }))}
