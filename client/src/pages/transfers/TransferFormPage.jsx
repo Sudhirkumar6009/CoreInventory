@@ -60,9 +60,24 @@ export default function TransferFormPage() {
   const [status, setStatus] = useState("draft");
   const [showCancel, setShowCancel] = useState(false);
 
+  const { data: locations = [] } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () =>
+      warehouseService
+        .getLocations()
+        .then((r) => r.data?.data || r.data?.locations || r.data || []),
+  });
+
   const srcLoc = watch("sourceLocation");
   const destLoc = watch("destinationLocation");
+  const srcText = watch("sourceText");
+  const destText = watch("destinationText");
   const sameLocation = srcLoc && destLoc && srcLoc === destLoc;
+  const sameTextLocation =
+    isStaff &&
+    !!srcText &&
+    !!destText &&
+    srcText.trim().toLowerCase() === destText.trim().toLowerCase();
   const sourceLocationObj = locations.find(
     (loc) => String(loc._id || loc.id) === String(srcLoc),
   );
@@ -74,14 +89,6 @@ export default function TransferFormPage() {
     !!destinationLocationObj &&
     String(sourceLocationObj.warehouseId?._id || sourceLocationObj.warehouseId) !==
       String(destinationLocationObj.warehouseId?._id || destinationLocationObj.warehouseId);
-
-  const { data: locations = [] } = useQuery({
-    queryKey: ["locations"],
-    queryFn: () =>
-      warehouseService
-        .getLocations()
-        .then((r) => r.data?.data || r.data?.locations || r.data || []),
-  });
 
   const { data: transfer, isLoading: fetchLoading } = useQuery({
     queryKey: ["transfer", id],
@@ -103,12 +110,15 @@ export default function TransferFormPage() {
           firstLine.fromLocationId?._id ||
           firstLine.fromLocationId ||
           "",
+        sourceText: transfer.sourceText || "",
         destinationLocation:
           transfer.destinationLocation?._id ||
           transfer.destinationLocation ||
           firstLine.toLocationId?._id ||
           firstLine.toLocationId ||
           "",
+        destinationText: transfer.destinationText || "",
+        warehouseLabel: transfer.warehouseLabel || "",
         scheduledDate: transfer.scheduledDate?.split("T")[0],
         notes: transfer.notes || "",
       });
@@ -118,7 +128,10 @@ export default function TransferFormPage() {
       reset({
         reference: previewRef("INT"),
         sourceLocation: "",
+        sourceText: "",
         destinationLocation: "",
+        destinationText: "",
+        warehouseLabel: "",
         scheduledDate: new Date().toISOString().split("T")[0],
         notes: "",
       });
@@ -175,9 +188,25 @@ export default function TransferFormPage() {
       return;
     }
 
+    if (sameTextLocation) {
+      toast.error("From and To cannot be the same.");
+      return;
+    }
+
     if (isStaff && crossWarehouse) {
       toast.error("Staff transfers must stay inside the same warehouse.");
       return;
+    }
+
+    if (isStaff) {
+      if (!formData.warehouseLabel?.trim()) {
+        toast.error("Warehouse is required.");
+        return;
+      }
+      if (!formData.sourceText?.trim() || !formData.destinationText?.trim()) {
+        toast.error("From and To are required.");
+        return;
+      }
     }
 
     const hasPartialLines = (lines || []).some((line) => {
@@ -214,6 +243,15 @@ export default function TransferFormPage() {
     saveMutation.mutate({
       ...formData,
       moveLines,
+      ...(isStaff
+        ? {
+            sourceLocation: null,
+            destinationLocation: null,
+            sourceText: formData.sourceText?.trim(),
+            destinationText: formData.destinationText?.trim(),
+            warehouseLabel: formData.warehouseLabel?.trim(),
+          }
+        : {}),
       ...(isManager ? { status } : {}),
     });
   };
@@ -255,7 +293,7 @@ export default function TransferFormPage() {
               <Button
                 onClick={handleSubmit(onSave)}
                 loading={saveMutation.isPending}
-                disabled={!!sameLocation}
+                disabled={!!sameLocation || !!sameTextLocation}
               >
                 Save
               </Button>
@@ -345,65 +383,120 @@ export default function TransferFormPage() {
             </div>
           )}
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Source Location *
-            </label>
-            <select
-              {...register("sourceLocation", {
-                required: "Source location is required",
-              })}
-              className="input-field"
-              disabled={isReadOnly}
-            >
-              <option value="">Select source location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            {errors.sourceLocation && (
-              <p className="text-xs text-red-500 mt-1">
-                {errors.sourceLocation.message}
-              </p>
-            )}
-          </div>
+          {isStaff ? (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Warehouse *
+                </label>
+                <input
+                  {...register("warehouseLabel", {
+                    required: "Warehouse is required",
+                  })}
+                  className="input-field"
+                  placeholder="e.g. Main Warehouse"
+                  disabled={isReadOnly}
+                />
+                {errors.warehouseLabel && (
+                  <p className="text-xs text-red-500 mt-1">{errors.warehouseLabel.message}</p>
+                )}
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Destination Location *
-            </label>
-            <select
-              {...register("destinationLocation", {
-                required: "Destination location is required",
-              })}
-              className="input-field"
-              disabled={isReadOnly}
-            >
-              <option value="">Select destination location...</option>
-              {locationOptions.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            {errors.destinationLocation && (
-              <p className="text-xs text-red-500 mt-1">
-                {errors.destinationLocation.message}
-              </p>
-            )}
-            {sameLocation && (
-              <p className="text-xs text-red-500 mt-1">
-                Source and destination cannot be the same location.
-              </p>
-            )}
-            {isStaff && crossWarehouse && (
-              <p className="text-xs text-red-500 mt-1">
-                Staff can transfer only within the same warehouse.
-              </p>
-            )}
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  From *
+                </label>
+                <input
+                  {...register("sourceText", {
+                    required: "From is required",
+                  })}
+                  className="input-field"
+                  placeholder="e.g. Rack 1"
+                  disabled={isReadOnly}
+                />
+                {errors.sourceText && (
+                  <p className="text-xs text-red-500 mt-1">{errors.sourceText.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  To *
+                </label>
+                <input
+                  {...register("destinationText", {
+                    required: "To is required",
+                  })}
+                  className="input-field"
+                  placeholder="e.g. Rack 2"
+                  disabled={isReadOnly}
+                />
+                {errors.destinationText && (
+                  <p className="text-xs text-red-500 mt-1">{errors.destinationText.message}</p>
+                )}
+                {sameTextLocation && (
+                  <p className="text-xs text-red-500 mt-1">From and To cannot be the same.</p>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Source Location *
+                </label>
+                <select
+                  {...register("sourceLocation", {
+                    required: "Source location is required",
+                  })}
+                  className="input-field"
+                  disabled={isReadOnly}
+                >
+                  <option value="">Select source location...</option>
+                  {locationOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                {errors.sourceLocation && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.sourceLocation.message}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Destination Location *
+                </label>
+                <select
+                  {...register("destinationLocation", {
+                    required: "Destination location is required",
+                  })}
+                  className="input-field"
+                  disabled={isReadOnly}
+                >
+                  <option value="">Select destination location...</option>
+                  {locationOptions.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+                {errors.destinationLocation && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.destinationLocation.message}
+                  </p>
+                )}
+                {sameLocation && (
+                  <p className="text-xs text-red-500 mt-1">
+                    Source and destination cannot be the same location.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -431,7 +524,7 @@ export default function TransferFormPage() {
         </div>
         {isStaff && (
           <div className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-3">
-            Staff transfer mode: this move is completed immediately after save.
+            Staff transfer mode: use Warehouse, From, and To text fields. Transfer is completed immediately after save.
           </div>
         )}
         <LineItemTable

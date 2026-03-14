@@ -4,51 +4,66 @@ const StockMoveLine = require("../models/StockMoveLine");
 const StockMove = require("../models/StockMove");
 const StockQuant = require("../models/StockQuant");
 const Location = require("../models/Location");
+const User = require("../models/User");
 const generateReference = require("../utils/generateReference");
 
 const isStaffUser = (user) => user?.role === "staff";
 
-const ensureStaffWarehouseScope = async (
-  sourceLocation,
-  destinationLocation,
-  user,
-) => {
-  if (!isStaffUser(user)) {
-    return { ok: true };
+const ensureStaffTextScope = (warehouseLabel, sourceText, destinationText, user) => {
+  if (!isStaffUser(user)) return { ok: true };
+
+  if (!warehouseLabel?.trim()) {
+    return { ok: false, message: "Warehouse is required for staff transfers" };
   }
-
-  if (!sourceLocation || !destinationLocation) {
-    return {
-      ok: false,
-      message: "Source and destination are required for staff transfers",
-    };
+  if (!sourceText?.trim() || !destinationText?.trim()) {
+    return { ok: false, message: "From and To are required for staff transfers" };
   }
-
-  const [source, destination] = await Promise.all([
-    Location.findById(sourceLocation).select("warehouseId").lean(),
-    Location.findById(destinationLocation).select("warehouseId").lean(),
-  ]);
-
-  if (!source || !destination) {
-    return { ok: false, message: "Invalid source or destination location" };
-  }
-
-  if (String(source.warehouseId) !== String(destination.warehouseId)) {
-    return {
-      ok: false,
-      message: "Staff transfers must stay inside the same warehouse",
-    };
+  if (sourceText.trim().toLowerCase() === destinationText.trim().toLowerCase()) {
+    return { ok: false, message: "From and To cannot be the same" };
   }
 
   return { ok: true };
+};
+
+const getStaffUserIds = async () => {
+  const staffUsers = await User.find({ role: "staff" }).select("_id").lean();
+  return staffUsers.map((u) => u._id);
 };
 
 const getTransferScopeFilter = (req, extra = {}) => {
   const filter = { pickingType: "INTERNAL", ...extra };
   if (isStaffUser(req.user)) {
     filter.createdBy = req.user._id;
+  } else if (req.user?.role === "manager") {
+    filter.createdByRole = { $ne: "staff" };
   }
   return filter;
+};
+
+const collectEffectiveLocationIds = (
+  moveLines = [],
+  fallbackSource,
+  fallbackDestination,
+) => {
+  const ids = new Set();
+
+  if (fallbackSource) ids.add(String(fallbackSource));
+  if (fallbackDestination) ids.add(String(fallbackDestination));
+
+  for (const line of moveLines) {
+    const fromId = line?.fromLocationId || fallbackSource;
+    const toId = line?.toLocationId || fallbackDestination;
+    if (fromId) ids.add(String(fromId));
+    if (toId) ids.add(String(toId));
+  }
+
+  return Array.from(ids);
+};
+
+const validateLocationIdsExist = async (locationIds = []) => {
+  if (!locationIds.length) return true;
+  const existing = await Location.countDocuments({ _id: { $in: locationIds } });
+  return existing === locationIds.length;
 };
 
 const applyTransferLines = async (session, transfer, moveLines, userId) => {
@@ -125,6 +140,12 @@ exports.getTransfers = async (req, res, next) => {
     const { status, search, page = 1, limit = 25 } = req.query;
 
     const filter = getTransferScopeFilter(req);
+    if (req.user?.role === "manager") {
+      const staffIds = await getStaffUserIds();
+      if (staffIds.length > 0) {
+        filter.createdBy = { $nin: staffIds };
+      }
+    }
     if (status) filter.status = status;
     if (search) {
       filter.$or = [{ reference: { $regex: search, $options: "i" } }];
@@ -169,53 +190,45 @@ exports.createTransfer = async (req, res, next) => {
       reference: incomingRef,
       sourceLocation,
       destinationLocation,
+      sourceText,
+      destinationText,
+      warehouseLabel,
       scheduledDate,
       notes,
       moveLines,
     } = req.body;
 
-    if (sourceLocation && !mongoose.Types.ObjectId.isValid(sourceLocation)) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid source location" });
+    const isStaff = isStaffUser(req.user);
+
+    if (!isStaff && sourceLocation && !mongoose.Types.ObjectId.isValid(sourceLocation)) {
+      return res.status(400).json({ success: false, message: "Invalid source location" });
     }
-    if (
-      destinationLocation &&
-      !mongoose.Types.ObjectId.isValid(destinationLocation)
-    ) {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid destination location" });
+    if (!isStaff && destinationLocation && !mongoose.Types.ObjectId.isValid(destinationLocation)) {
+      return res.status(400).json({ success: false, message: "Invalid destination location" });
     }
-    if (
-      sourceLocation &&
-      destinationLocation &&
-      String(sourceLocation) === String(destinationLocation)
-    ) {
+    if (!isStaff && sourceLocation && destinationLocation && String(sourceLocation) === String(destinationLocation)) {
       return res.status(400).json({
         success: false,
         message: "Source and destination cannot be the same location",
       });
     }
 
-    const warehouseScope = await ensureStaffWarehouseScope(
-      sourceLocation,
-      destinationLocation,
-      req.user,
-    );
-    if (!warehouseScope.ok) {
+    const textScope = ensureStaffTextScope(warehouseLabel, sourceText, destinationText, req.user);
+    if (!textScope.ok) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, message: warehouseScope.message });
+      return res.status(400).json({ success: false, message: textScope.message });
     }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
         const qtyOrdered = Number(line?.qtyOrdered || 0);
-        const effectiveFrom = line?.fromLocationId || sourceLocation;
-        const effectiveTo = line?.toLocationId || destinationLocation;
+        const effectiveFrom = isStaff ? "staff-text" : (line?.fromLocationId || sourceLocation);
+        const effectiveTo = isStaff ? "staff-text" : (line?.toLocationId || destinationLocation);
         return (
           !line?.productId ||
           !mongoose.Types.ObjectId.isValid(line.productId) ||
+          (!isStaff && !mongoose.Types.ObjectId.isValid(effectiveFrom)) ||
+          (!isStaff && !mongoose.Types.ObjectId.isValid(effectiveTo)) ||
           qtyOrdered <= 0 ||
           !effectiveFrom ||
           !effectiveTo
@@ -228,6 +241,22 @@ exports.createTransfer = async (req, res, next) => {
           message:
             "Each move line must include product, quantity, source location, and destination location",
         });
+      }
+
+      if (!isStaff) {
+        const locationIds = collectEffectiveLocationIds(
+          moveLines,
+          sourceLocation,
+          destinationLocation,
+        );
+        const locationIdsExist = await validateLocationIdsExist(locationIds);
+        if (!locationIdsExist) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "Invalid source or destination location selection",
+          });
+        }
       }
     }
 
@@ -249,12 +278,16 @@ exports.createTransfer = async (req, res, next) => {
         {
           reference,
           pickingType: "INTERNAL",
-          sourceLocation: sourceLocation || null,
-          destinationLocation: destinationLocation || null,
+          sourceLocation: isStaff ? null : (sourceLocation || null),
+          destinationLocation: isStaff ? null : (destinationLocation || null),
+          sourceText: isStaff ? sourceText.trim() : "",
+          destinationText: isStaff ? destinationText.trim() : "",
+          warehouseLabel: isStaff ? warehouseLabel.trim() : "",
           scheduledDate,
           notes,
           status: "draft",
           createdBy: req.user._id,
+          createdByRole: req.user?.role || "staff",
         },
       ],
       { session },
@@ -268,8 +301,8 @@ exports.createTransfer = async (req, res, next) => {
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || "units",
-        fromLocationId: line.fromLocationId || sourceLocation,
-        toLocationId: line.toLocationId || destinationLocation,
+        fromLocationId: isStaff ? null : (line.fromLocationId || sourceLocation),
+        toLocationId: isStaff ? null : (line.toLocationId || destinationLocation),
         status: "draft",
       }));
       insertedLines = await StockMoveLine.insertMany(lines, { session });
@@ -337,6 +370,10 @@ exports.getTransfer = async (req, res, next) => {
         .json({ success: false, message: "Transfer not found" });
     }
 
+    if (req.user?.role === "manager" && transfer.createdByRole === "staff") {
+      return res.status(404).json({ success: false, message: "Transfer not found" });
+    }
+
     res.json({ success: true, data: transfer });
   } catch (error) {
     next(error);
@@ -375,11 +412,16 @@ exports.updateTransfer = async (req, res, next) => {
       reference: incomingRef,
       sourceLocation,
       destinationLocation,
+      sourceText,
+      destinationText,
+      warehouseLabel,
       scheduledDate,
       notes,
       status,
       moveLines,
     } = req.body;
+
+    const isStaff = isStaffUser(req.user);
 
     if (isStaffUser(req.user) && status && status !== transfer.status) {
       await session.abortTransaction();
@@ -389,52 +431,48 @@ exports.updateTransfer = async (req, res, next) => {
       });
     }
 
-    if (sourceLocation && !mongoose.Types.ObjectId.isValid(sourceLocation)) {
+    if (!isStaff && sourceLocation && !mongoose.Types.ObjectId.isValid(sourceLocation)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid source location" });
     }
-    if (
-      destinationLocation &&
-      !mongoose.Types.ObjectId.isValid(destinationLocation)
-    ) {
+    if (!isStaff && destinationLocation && !mongoose.Types.ObjectId.isValid(destinationLocation)) {
       return res
         .status(400)
         .json({ success: false, message: "Invalid destination location" });
     }
-    if (
-      sourceLocation &&
-      destinationLocation &&
-      String(sourceLocation) === String(destinationLocation)
-    ) {
+    if (!isStaff && sourceLocation && destinationLocation && String(sourceLocation) === String(destinationLocation)) {
       return res.status(400).json({
         success: false,
         message: "Source and destination cannot be the same location",
       });
     }
 
-    const warehouseScope = await ensureStaffWarehouseScope(
-      sourceLocation || transfer.sourceLocation,
-      destinationLocation || transfer.destinationLocation,
+    const textScope = ensureStaffTextScope(
+      warehouseLabel || transfer.warehouseLabel,
+      sourceText || transfer.sourceText,
+      destinationText || transfer.destinationText,
       req.user,
     );
-    if (!warehouseScope.ok) {
+    if (!textScope.ok) {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, message: warehouseScope.message });
+      return res.status(400).json({ success: false, message: textScope.message });
     }
 
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
         const qtyOrdered = Number(line?.qtyOrdered || 0);
         const effectiveFrom =
-          line?.fromLocationId || sourceLocation || transfer.sourceLocation;
+          isStaff ? "staff-text" : (line?.fromLocationId || sourceLocation || transfer.sourceLocation);
         const effectiveTo =
-          line?.toLocationId ||
-          destinationLocation ||
-          transfer.destinationLocation;
+          isStaff
+            ? "staff-text"
+            : (line?.toLocationId || destinationLocation || transfer.destinationLocation);
         return (
           !line?.productId ||
           !mongoose.Types.ObjectId.isValid(line.productId) ||
+          (!isStaff && !mongoose.Types.ObjectId.isValid(effectiveFrom)) ||
+          (!isStaff && !mongoose.Types.ObjectId.isValid(effectiveTo)) ||
           qtyOrdered <= 0 ||
           !effectiveFrom ||
           !effectiveTo
@@ -447,6 +485,22 @@ exports.updateTransfer = async (req, res, next) => {
           message:
             "Each move line must include product, quantity, source location, and destination location",
         });
+      }
+
+      if (!isStaff) {
+        const locationIds = collectEffectiveLocationIds(
+          moveLines,
+          sourceLocation || transfer.sourceLocation,
+          destinationLocation || transfer.destinationLocation,
+        );
+        const locationIdsExist = await validateLocationIdsExist(locationIds);
+        if (!locationIdsExist) {
+          await session.abortTransaction();
+          return res.status(400).json({
+            success: false,
+            message: "Invalid source or destination location selection",
+          });
+        }
       }
     }
 
@@ -469,9 +523,12 @@ exports.updateTransfer = async (req, res, next) => {
 
     if (scheduledDate !== undefined) transfer.scheduledDate = scheduledDate;
     if (sourceLocation !== undefined)
-      transfer.sourceLocation = sourceLocation || null;
+      transfer.sourceLocation = isStaff ? null : (sourceLocation || null);
     if (destinationLocation !== undefined)
-      transfer.destinationLocation = destinationLocation || null;
+      transfer.destinationLocation = isStaff ? null : (destinationLocation || null);
+    if (isStaff && sourceText !== undefined) transfer.sourceText = sourceText.trim();
+    if (isStaff && destinationText !== undefined) transfer.destinationText = destinationText.trim();
+    if (isStaff && warehouseLabel !== undefined) transfer.warehouseLabel = warehouseLabel.trim();
     if (notes !== undefined) transfer.notes = notes;
     if (status) transfer.status = status;
 
@@ -486,8 +543,8 @@ exports.updateTransfer = async (req, res, next) => {
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || "units",
-        fromLocationId: line.fromLocationId || transfer.sourceLocation,
-        toLocationId: line.toLocationId || transfer.destinationLocation,
+        fromLocationId: isStaff ? null : (line.fromLocationId || transfer.sourceLocation),
+        toLocationId: isStaff ? null : (line.toLocationId || transfer.destinationLocation),
         status: transfer.status,
       }));
       updatedLines = await StockMoveLine.insertMany(lines, { session });

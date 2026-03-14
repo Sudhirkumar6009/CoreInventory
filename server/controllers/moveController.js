@@ -19,6 +19,9 @@ const formatMoveForUi = (move) => {
   const isDelivery = move.moveType === 'OUT';
 
   const partyLabel = firstNonEmpty(move.pickingId?.supplierOrCustomer, move.supplierOrCustomer);
+  const sourceTextLabel = firstNonEmpty(move.pickingId?.sourceText, move.sourceText);
+  const destinationTextLabel = firstNonEmpty(move.pickingId?.destinationText, move.destinationText);
+  const warehouseLabel = firstNonEmpty(move.pickingId?.warehouseLabel, move.warehouseLabel);
   const fromLocationLabel = firstNonEmpty(
     resolveLocationLabel(move.fromLocationId),
     resolveLocationLabel(move.fromLocation),
@@ -40,8 +43,15 @@ const formatMoveForUi = (move) => {
     : isDelivery
       ? (partyLabel || toLocationLabel || '--')
     : isInternal
-      ? (toLocationLabel || '--')
+      ? (toLocationLabel || destinationTextLabel || '--')
       : (toLocationLabel || adjustmentLocationLabel || '--');
+
+  const internalFromDisplay = isInternal
+    ? firstNonEmpty(fromLocationLabel, sourceTextLabel, '--')
+    : fromDisplay;
+  const internalToDisplay = isInternal
+    ? firstNonEmpty(toDisplay, destinationTextLabel, '--')
+    : toDisplay;
 
   return {
     ...move,
@@ -49,8 +59,9 @@ const formatMoveForUi = (move) => {
     product: move.productId || null,
     fromLocation: move.fromLocationId || null,
     toLocation: move.toLocationId || null,
-    fromDisplay,
-    toDisplay,
+    fromDisplay: internalFromDisplay,
+    toDisplay: internalToDisplay,
+    warehouseLabel: warehouseLabel || '--',
   };
 };
 
@@ -97,7 +108,7 @@ exports.getMoves = async (req, res, next) => {
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
-      .populate('pickingId', 'reference pickingType supplierOrCustomer')
+      .populate('pickingId', 'reference pickingType supplierOrCustomer sourceText destinationText warehouseLabel')
       .populate({
         path: 'adjustmentId',
         select: 'reference locationId',
@@ -142,7 +153,7 @@ exports.getMove = async (req, res, next) => {
       .populate('productId', 'name sku uom')
       .populate('fromLocationId', 'name shortCode')
       .populate('toLocationId', 'name shortCode')
-      .populate('pickingId', 'reference pickingType status supplierOrCustomer')
+      .populate('pickingId', 'reference pickingType status supplierOrCustomer sourceText destinationText warehouseLabel')
       .populate({
         path: 'adjustmentId',
         select: 'reference locationId',
