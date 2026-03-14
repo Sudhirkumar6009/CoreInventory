@@ -1,86 +1,87 @@
-import { useEffect, useMemo, useState } from "react";
-import { TrashIcon, PlusIcon } from "@heroicons/react/24/outline";
-import { productService } from "../../api/productService";
-import { warehouseService } from "../../api/warehouseService";
-import { useDebounce } from "../../hooks/useDebounce";
-import { UOM_OPTIONS } from "../../constants";
+import { useEffect, useMemo, useState } from 'react'
+import { TrashIcon, PlusIcon } from '@heroicons/react/24/outline'
+import { productService } from '../../api/productService'
+import { warehouseService } from '../../api/warehouseService'
+import { useDebounce } from '../../hooks/useDebounce'
+import { UOM_OPTIONS } from '../../constants'
 
 const toNumberOrDefault = (value, fallback = 0) => {
-  if (value === undefined || value === null || value === "") return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-};
+  if (value === undefined || value === null || value === '') return fallback
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
 
 const getProductIdValue = (line) => {
-  const raw = line?.productId || line?.product || null;
-  if (!raw) return "";
-  if (typeof raw === "string") return raw;
-  return raw._id || raw.id || "";
-};
+  const raw = line?.productId || line?.product || null
+  if (!raw) return ''
+  if (typeof raw === 'string') return raw
+  return raw._id || raw.id || ''
+}
 
 const getProductNameValue = (line) => {
-  return (
-    line?.productName || line?.product?.name || line?.productId?.name || ""
-  );
-};
+  return line?.productName || line?.product?.name || line?.productId?.name || ''
+}
+
+const createLineId = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
 
 export default function LineItemTable({
   lines = [],
   onChange,
   readOnly = false,
   showLocation = false,
-  locationField = "toLocationId",
-  locationLabel = "Location",
+  locationField = 'toLocationId',
+  locationLabel = 'Location',
   locationOptions,
   locationWarehouse,
 }) {
-  const [locations, setLocations] = useState([]);
+  const [fetchedLocations, setFetchedLocations] = useState([])
 
-  const getLineId = (line, idx) => line.id || line._id || `line-${idx}`;
+  const getLineId = (line, idx) => line?.id || line?._id || `line-${idx}`
 
   useEffect(() => {
-    if (!showLocation || Array.isArray(locationOptions)) return;
+    if (!showLocation || Array.isArray(locationOptions)) return
 
     warehouseService
-      .getLocations(
-        locationWarehouse ? { warehouse: locationWarehouse } : undefined,
-      )
-      .then((res) => setLocations(res.data?.data || res.data?.locations || []))
-      .catch(() => setLocations([]));
-  }, [showLocation, locationOptions, locationWarehouse]);
+      .getLocations(locationWarehouse ? { warehouse: locationWarehouse } : undefined)
+      .then((res) => setFetchedLocations(res.data?.data || res.data?.locations || []))
+      .catch(() => setFetchedLocations([]))
+  }, [showLocation, locationOptions, locationWarehouse])
 
   const resolvedLocations = useMemo(() => {
-    if (Array.isArray(locationOptions)) return locationOptions;
-    return locations;
-  }, [locationOptions, locations]);
+    if (Array.isArray(locationOptions)) return locationOptions
+    return fetchedLocations
+  }, [locationOptions, fetchedLocations])
 
   const addLine = () => {
-    onChange([
-      ...(lines || []),
-      {
-        id: crypto.randomUUID(),
-        productId: "",
-        productName: "",
-        description: "",
-        qty: 0,
-        qtyDone: 0,
-        uom: "units",
-        [locationField]: "",
-      },
-    ]);
-  };
+    const newLine = {
+      id: createLineId(),
+      productId: '',
+      productName: '',
+      sku: '',
+      qty: 0,
+      qtyDone: 0,
+      uom: 'units',
+      [locationField]: '',
+    }
+    onChange([...(lines || []), newLine])
+  }
 
   const removeLine = (id) => {
-    onChange((lines || []).filter((l, idx) => getLineId(l, idx) !== id));
-  };
+    onChange((lines || []).filter((line, idx) => getLineId(line, idx) !== id))
+  }
 
-  const patchLine = (id, patch) => {
+  const updateLinePatch = (id, patch) => {
     onChange(
-      (lines || []).map((l, idx) =>
-        getLineId(l, idx) === id ? { ...l, ...patch } : l,
+      (lines || []).map((line, idx) =>
+        getLineId(line, idx) === id ? { ...line, ...patch } : line,
       ),
-    );
-  };
+    )
+  }
 
   return (
     <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -88,21 +89,11 @@ export default function LineItemTable({
         <table className="w-full min-w-[980px]">
           <thead>
             <tr className="bg-gray-50/80 border-b border-gray-100">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-1/4">
-                Product
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">
-                Description
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">
-                Qty
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">
-                UoM
-              </th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">
-                Qty Done
-              </th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-1/4">Product</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">SKU ID</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">UoM</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty Done</th>
               {showLocation && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-48">
                   {locationLabel}
@@ -113,20 +104,20 @@ export default function LineItemTable({
           </thead>
           <tbody className="divide-y divide-gray-50">
             {(lines || []).map((line, idx) => {
-              const lineId = getLineId(line, idx);
+              const lineId = getLineId(line, idx)
               return (
                 <LineRow
                   key={lineId}
                   lineId={lineId}
                   line={line}
                   readOnly={readOnly}
-                  onPatch={patchLine}
+                  onPatch={updateLinePatch}
                   onRemove={removeLine}
                   showLocation={showLocation}
                   locationField={locationField}
                   locations={resolvedLocations}
                 />
-              );
+              )
             })}
             {(lines || []).length === 0 && (
               <tr>
@@ -141,6 +132,7 @@ export default function LineItemTable({
           </tbody>
         </table>
       </div>
+
       {!readOnly && (
         <button
           type="button"
@@ -152,7 +144,7 @@ export default function LineItemTable({
         </button>
       )}
     </div>
-  );
+  )
 }
 
 function LineRow({
@@ -165,127 +157,71 @@ function LineRow({
   locationField,
   locations,
 }) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [results, setResults] = useState([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [fetchingDetails, setFetchingDetails] = useState(false);
-  const debounced = useDebounce(searchTerm, 300);
-  const selectedProductId = getProductIdValue(line);
-  const selectedProductName = getProductNameValue(line);
-  const qtyValue = toNumberOrDefault(line?.qty ?? line?.qtyOrdered, 0);
-  const qtyDoneValue = toNumberOrDefault(line?.qtyDone, 0);
-  const currentLocation = line?.[locationField] || "";
+  const [searchTerm, setSearchTerm] = useState('')
+  const [results, setResults] = useState([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const debounced = useDebounce(searchTerm, 300)
+
+  const selectedProductId = getProductIdValue(line)
+  const selectedProductName = getProductNameValue(line)
+  const skuValue = line?.sku || line?.skuId || line?.product?.sku || line?.productId?.sku || ''
+  const qtyValue = toNumberOrDefault(line?.qty ?? line?.qtyOrdered, 0)
+  const qtyDoneValue = toNumberOrDefault(line?.qtyDone, 0)
+  const currentLocation =
+    (line && line[locationField] && (line[locationField]._id || line[locationField])) || ''
 
   useEffect(() => {
-    setSearchTerm(selectedProductName);
-  }, [selectedProductName]);
+    setSearchTerm(selectedProductName)
+  }, [selectedProductName])
 
   useEffect(() => {
-    const shouldSearch =
-      debounced.trim().length >= 2 && debounced !== selectedProductName;
+    const shouldSearch = debounced.trim().length >= 2 && debounced !== selectedProductName
+
     if (!shouldSearch) {
-      setShowDropdown(false);
-      return;
+      setShowDropdown(false)
+      return
     }
 
     productService
       .getAll({ search: debounced, limit: 8 })
       .then((res) => {
-        setResults(
-          res.data?.data || res.data?.products || res.data?.items || [],
-        );
-        setShowDropdown(true);
+        setResults(res.data?.data || res.data?.products || res.data?.items || [])
+        setShowDropdown(true)
       })
       .catch(() => {
-        setResults([]);
-        setShowDropdown(false);
-      });
-  }, [debounced, selectedProductName]);
-
-  const applyProductDetails = async (product) => {
-    const productId = product._id || product.id;
-    const basePatch = {
-      productId,
-      productName: product.name || "",
-      description:
-        line?.description || product.description || product.sku || "",
-      uom: product.uom || product.unitOfMeasure || line?.uom || "units",
-    };
-
-    onPatch(lineId, basePatch);
-
-    setFetchingDetails(true);
-    try {
-      const stockRes = await productService.getStock(productId);
-      const stockData = stockRes.data?.data || {};
-      const byLocation = Array.isArray(stockData.byLocation)
-        ? stockData.byLocation
-        : [];
-
-      const preferredLocationId =
-        byLocation.find(
-          (entry) => toNumberOrDefault(entry?.onHand ?? entry?.quantity, 0) > 0,
-        )?.locationId ||
-        byLocation[0]?.locationId ||
-        "";
-
-      onPatch(lineId, {
-        ...basePatch,
-        availableQty: toNumberOrDefault(stockData.totalOnHand, 0),
-        ...(showLocation && !line?.[locationField] && preferredLocationId
-          ? { [locationField]: preferredLocationId }
-          : {}),
-      });
-    } catch {
-      try {
-        const detailRes = await productService.getById(productId);
-        const detail = detailRes.data?.data || detailRes.data || {};
-        onPatch(lineId, {
-          ...basePatch,
-          description:
-            line?.description || detail.description || product.sku || "",
-          uom: detail.uom || detail.unitOfMeasure || basePatch.uom,
-        });
-      } catch {
-        // Keep base patch if detail fetch fails.
-      }
-    } finally {
-      setFetchingDetails(false);
-    }
-  };
+        setResults([])
+        setShowDropdown(false)
+      })
+  }, [debounced, selectedProductName])
 
   const selectProduct = (product) => {
-    setSearchTerm(product.name || "");
-    setShowDropdown(false);
-    void applyProductDetails(product);
-  };
+    onPatch(lineId, {
+      productId: product._id || product.id,
+      productName: product.name || '',
+      sku: product.sku || '',
+      uom: product.uom || product.unitOfMeasure || 'units',
+    })
+    setSearchTerm(product.name || '')
+    setShowDropdown(false)
+  }
 
   const onSearchChange = (value) => {
-    setSearchTerm(value);
+    setSearchTerm(value)
     if (selectedProductId && value !== selectedProductName) {
-      onPatch(lineId, {
-        productId: "",
-        productName: "",
-        description: "",
-      });
+      onPatch(lineId, { productId: '', productName: '', sku: '' })
     }
-  };
-
-  const clearProduct = () => {
-    setSearchTerm("");
-    setResults([]);
-    setShowDropdown(false);
-    onPatch(lineId, {
-      productId: "",
-      productName: "",
-      description: "",
-      availableQty: 0,
-    });
-  };
+  }
 
   const onQtyChange = (value) => {
-    onPatch(lineId, { qty: toNumberOrDefault(value, 0) });
-  };
+    onPatch(lineId, { qty: toNumberOrDefault(value, 0) })
+  }
+
+  const clearProduct = () => {
+    setSearchTerm('')
+    setResults([])
+    setShowDropdown(false)
+    onPatch(lineId, { productId: '', productName: '', sku: '' })
+  }
 
   return (
     <tr className="group">
@@ -319,18 +255,10 @@ function LineRow({
                   className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
                 >
                   <div className="font-medium text-gray-900">{p.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {p.sku || "--"} | On hand:{" "}
-                    {toNumberOrDefault(p.onHand ?? p.totalOnHand, 0)}
-                  </div>
+                  <div className="text-xs text-gray-500">{p.sku || '--'}</div>
                 </button>
               ))}
             </div>
-          )}
-          {fetchingDetails && (
-            <p className="text-[11px] text-gray-400 mt-1">
-              Loading product details...
-            </p>
           )}
         </div>
       </td>
@@ -338,11 +266,11 @@ function LineRow({
       <td className="px-4 py-2">
         <input
           type="text"
-          value={line?.description || ""}
-          onChange={(e) => onPatch(lineId, { description: e.target.value })}
-          disabled={readOnly}
-          placeholder="Description"
-          className="input-field text-sm"
+          value={skuValue}
+          readOnly
+          disabled
+          placeholder="SKU ID"
+          className="input-field text-sm bg-gray-50"
         />
       </td>
 
@@ -360,7 +288,7 @@ function LineRow({
 
       <td className="px-4 py-2">
         <select
-          value={line?.uom || "units"}
+          value={line?.uom || 'units'}
           onChange={(e) => onPatch(lineId, { uom: e.target.value })}
           disabled={readOnly}
           className="input-field text-sm"
@@ -377,9 +305,7 @@ function LineRow({
         <input
           type="number"
           value={qtyDoneValue}
-          onChange={(e) =>
-            onPatch(lineId, { qtyDone: toNumberOrDefault(e.target.value, 0) })
-          }
+          onChange={(e) => onPatch(lineId, { qtyDone: toNumberOrDefault(e.target.value, 0) })}
           disabled={readOnly}
           min="0"
           step="0.01"
@@ -391,9 +317,7 @@ function LineRow({
         <td className="px-4 py-2">
           <select
             value={currentLocation}
-            onChange={(e) =>
-              onPatch(lineId, { [locationField]: e.target.value })
-            }
+            onChange={(e) => onPatch(lineId, { [locationField]: e.target.value })}
             disabled={readOnly}
             className="input-field text-sm"
           >
@@ -401,7 +325,7 @@ function LineRow({
             {(locations || []).map((loc) => (
               <option key={loc._id || loc.id} value={loc._id || loc.id}>
                 {loc.name}
-                {loc.shortCode ? ` (${loc.shortCode})` : ""}
+                {loc.shortCode ? ` (${loc.shortCode})` : ''}
               </option>
             ))}
           </select>
@@ -420,5 +344,5 @@ function LineRow({
         </td>
       )}
     </tr>
-  );
+  )
 }
