@@ -35,9 +35,39 @@ exports.getProducts = async (req, res, next) => {
       .limit(parseInt(limit))
       .lean();
 
+    const productIds = products.map((p) => p._id);
+    let stockMap = new Map();
+
+    if (productIds.length > 0) {
+      const stockSummary = await StockQuant.aggregate([
+        { $match: { productId: { $in: productIds } } },
+        {
+          $group: {
+            _id: '$productId',
+            onHand: { $sum: '$quantity' },
+            reservedQty: { $sum: '$reservedQty' },
+          },
+        },
+      ]);
+
+      stockMap = new Map(
+        stockSummary.map((row) => [String(row._id), { onHand: row.onHand || 0, reservedQty: row.reservedQty || 0 }])
+      );
+    }
+
+    const productsWithStock = products.map((product) => {
+      const stock = stockMap.get(String(product._id)) || { onHand: 0, reservedQty: 0 };
+      return {
+        ...product,
+        onHand: stock.onHand,
+        reservedQty: stock.reservedQty,
+        freeToUse: stock.onHand - stock.reservedQty,
+      };
+    });
+
     res.json({
       success: true,
-      data: products,
+      data: productsWithStock,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

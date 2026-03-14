@@ -30,6 +30,8 @@ export default function ProductListPage() {
     { key: 'name', label: 'Product Name', render: (r) => <span className="font-medium text-gray-900">{r.name}</span> },
     { key: 'sku', label: 'SKU', render: (r) => <span className="text-xs font-mono text-gray-500">{r.sku || r.code || '--'}</span> },
     { key: 'perUnitCost', label: 'Per Unit Cost', render: (r) => r.perUnitCost != null ? `₹${r.perUnitCost}` : '--' },
+    { key: 'onHand', label: 'On Hand', render: (r) => r.onHand ?? 0 },
+    { key: 'freeToUse', label: 'Free To Use', render: (r) => r.freeToUse ?? ((r.onHand || 0) - (r.reservedQty || 0)) },
   ]
 
   const handleSearch = useCallback((search) => { setFilters((f) => ({ ...f, search, page: 1 })) }, [])

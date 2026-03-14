@@ -18,7 +18,7 @@ export default function ReceiptFormPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const isNew = id === 'new'
+  const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Receipt' : `Receipt ${id}`)
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm()
@@ -37,11 +37,11 @@ export default function ReceiptFormPage() {
     if (receipt) {
       reset({
         reference: receipt.reference,
-        supplier: receipt.supplier,
+        supplier: receipt.supplier || receipt.supplierOrCustomer,
         scheduledDate: receipt.scheduledDate?.split('T')[0],
         sourceDocument: receipt.sourceDocument,
       })
-      setLines(receipt.lines || receipt.items || [])
+      setLines(receipt.moveLines || receipt.lines || receipt.items || [])
       setStatus(receipt.status || 'draft')
     } else if (isNew) {
       reset({ reference: previewRef('IN'), supplier: '', scheduledDate: '', sourceDocument: '' })
@@ -49,7 +49,12 @@ export default function ReceiptFormPage() {
   }, [receipt, isNew, reset])
 
   const saveMutation = useMutation({
-    mutationFn: (data) => isNew ? receiptService.create(data) : receiptService.update(id, data),
+    mutationFn: (data) => {
+      if (!isNew && !id) {
+        throw new Error('Receipt id is missing for update')
+      }
+      return isNew ? receiptService.create(data) : receiptService.update(id, data)
+    },
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['receipts'] })
       toast.success('Receipt saved')
@@ -94,7 +99,25 @@ export default function ReceiptFormPage() {
   })
 
   const onSave = (formData) => {
-    saveMutation.mutate({ ...formData, lines, status: 'draft' })
+    const moveLines = (lines || []).map((line) => ({
+      productId: line.productId,
+      description: line.description || '',
+      qtyOrdered: Number(line.qty || line.qtyOrdered || 0),
+      qtyDone: Number(line.qtyDone || 0),
+      uom: line.uom || 'units',
+      toLocationId: line.toLocationId || null,
+    }))
+
+    const payload = {
+      reference: formData.reference,
+      supplierOrCustomer: formData.supplier,
+      scheduledDate: formData.scheduledDate,
+      sourceDocument: formData.sourceDocument,
+      status: 'draft',
+      moveLines,
+    }
+
+    saveMutation.mutate(payload)
   }
 
   const isReadOnly = status === 'done' || status === 'cancelled'

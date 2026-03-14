@@ -119,7 +119,7 @@ export default function ProductFormPage() {
           {isNew && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Initial Stock (optional)</label>
-              <input type="number" {...register('initialStock', { min: 0 })} className="input-field" placeholder="0" min="0" />
+              <input type="number" {...register('initialStock', { min: 0 })} className="input-field" placeholder="0" min="0" step="0.01" />
             </div>
           )}
         </div>
