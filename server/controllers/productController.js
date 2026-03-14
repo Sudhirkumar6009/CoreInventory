@@ -111,6 +111,7 @@ exports.updateProduct = async (req, res, next) => {
       sku,
       categoryId,
       uom,
+      perUnitCost,
     } = req.body;
 
     const payload = {
@@ -118,6 +119,7 @@ exports.updateProduct = async (req, res, next) => {
       sku,
       categoryId: categoryId || null,
       uom,
+      perUnitCost,
     };
 
     // Remove undefined keys so partial updates remain valid.
@@ -185,22 +187,17 @@ exports.getProductStock = async (req, res, next) => {
       })
       .lean();
 
-    const totalOnHand = stockQuants.reduce((sum, sq) => sum + sq.quantity, 0);
     const totalReserved = stockQuants.reduce((sum, sq) => sum + sq.reservedQty, 0);
-    const freeToUse = totalOnHand - totalReserved;
 
     res.json({
       success: true,
       data: {
         product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
-        totalOnHand,
         totalReserved,
-        freeToUse,
         byLocation: stockQuants.map((sq) => ({
           location: sq.locationId,
           quantity: sq.quantity,
           reservedQty: sq.reservedQty,
-          freeToUse: sq.quantity - sq.reservedQty,
         })),
       },
     });
