@@ -14,18 +14,4 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-/**
- * General API rate limiter — 500 requests per minute per IP
- */
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 500,
-  message: {
-    success: false,
-    message: 'Too many requests, please slow down',
-  },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-module.exports = { authLimiter, apiLimiter };
+module.exports = { authLimiter };
