@@ -25,20 +25,6 @@ exports.getWarehouses = async (req, res, next) => {
 };
 
 /**
- * @desc    Create a warehouse
- * @route   POST /api/warehouses
- * @access  Private (Manager)
- */
-exports.createWarehouse = async (req, res, next) => {
-  try {
-    const warehouse = await Warehouse.create(req.body);
-    res.status(201).json({ success: true, data: warehouse });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * @desc    Get single warehouse (with locations)
  * @route   GET /api/warehouses/:id
  * @access  Private
@@ -82,31 +68,3 @@ exports.updateWarehouse = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Delete warehouse
- * @route   DELETE /api/warehouses/:id
- * @access  Private (Manager)
- */
-exports.deleteWarehouse = async (req, res, next) => {
-  try {
-    const warehouse = await Warehouse.findById(req.params.id);
-
-    if (!warehouse) {
-      return res.status(404).json({ success: false, message: 'Warehouse not found' });
-    }
-
-    // Check if warehouse has locations with stock
-    const locations = await Location.find({ warehouseId: warehouse._id });
-    if (locations.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot delete warehouse with existing locations. Remove all locations first.',
-      });
-    }
-
-    await warehouse.deleteOne();
-    res.json({ success: true, message: 'Warehouse deleted' });
-  } catch (error) {
-    next(error);
-  }
-};

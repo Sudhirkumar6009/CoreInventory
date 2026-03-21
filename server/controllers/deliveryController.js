@@ -11,36 +11,42 @@ const getLineQuantity = (line) => {
   return qtyDone > 0 ? qtyDone : qtyOrdered;
 };
 
-const aggregateQtyByProduct = (moveLines = []) => {
-  const qtyByProduct = new Map();
+const aggregateQtyByProductAndLocation = (moveLines = []) => {
+  const qtyMap = new Map();
   for (const line of moveLines) {
     const qty = getLineQuantity(line);
     const productId = line.productId?.toString();
-    if (!productId || qty <= 0) continue;
-    qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qty);
+    const locationId = line.fromLocationId?.toString();
+    if (!productId || !locationId || qty <= 0) continue;
+    const key = `${productId}_${locationId}`;
+    qtyMap.set(key, (qtyMap.get(key) || 0) + qty);
   }
-  return qtyByProduct;
+  return qtyMap;
 };
 
 const reserveStockForLines = async (session, moveLines) => {
-  const qtyByProduct = aggregateQtyByProduct(moveLines);
+  const qtyMap = aggregateQtyByProductAndLocation(moveLines);
 
-  for (const [productId, reserveQty] of qtyByProduct.entries()) {
-    const quant = await StockQuant.findOne({ productId }).session(session);
+  for (const [key, reserveQty] of qtyMap.entries()) {
+    const [productId, locationId] = key.split('_');
+    const quant = await StockQuant.findOne({ productId, locationId }).session(session);
     const availableQty = quant ? quant.quantity - quant.reservedQty : 0;
 
     if (availableQty < reserveQty) {
-      throw new Error(`Insufficient stock to reserve. Available: ${availableQty}, Required: ${reserveQty}`);
+      throw new Error(`Insufficient stock to reserve at location. Available: ${availableQty}, Required: ${reserveQty}`);
     }
   }
 
-  const ops = Array.from(qtyByProduct.entries()).map(([productId, reserveQty]) => ({
-    updateOne: {
-      filter: { productId },
-      update: { $inc: { reservedQty: reserveQty } },
-      upsert: true,
-    },
-  }));
+  const ops = Array.from(qtyMap.entries()).map(([key, reserveQty]) => {
+    const [productId, locationId] = key.split('_');
+    return {
+      updateOne: {
+        filter: { productId, locationId },
+        update: { $inc: { reservedQty: reserveQty } },
+        upsert: true,
+      },
+    };
+  });
 
   if (ops.length > 0) {
     await StockQuant.bulkWrite(ops, { session });
@@ -48,23 +54,27 @@ const reserveStockForLines = async (session, moveLines) => {
 };
 
 const unreserveStockForLines = async (session, moveLines) => {
-  const qtyByProduct = aggregateQtyByProduct(moveLines);
+  const qtyMap = aggregateQtyByProductAndLocation(moveLines);
 
-  for (const [productId, unreserveQty] of qtyByProduct.entries()) {
-    const quant = await StockQuant.findOne({ productId }).session(session);
+  for (const [key, unreserveQty] of qtyMap.entries()) {
+    const [productId, locationId] = key.split('_');
+    const quant = await StockQuant.findOne({ productId, locationId }).session(session);
     const reservedQty = quant ? quant.reservedQty : 0;
 
     if (reservedQty < unreserveQty) {
-      throw new Error(`Cannot release reservation. Reserved: ${reservedQty}, Required: ${unreserveQty}`);
+      throw new Error(`Cannot release reservation at location. Reserved: ${reservedQty}, Required: ${unreserveQty}`);
     }
   }
 
-  const ops = Array.from(qtyByProduct.entries()).map(([productId, unreserveQty]) => ({
-    updateOne: {
-      filter: { productId },
-      update: { $inc: { reservedQty: -unreserveQty } },
-    },
-  }));
+  const ops = Array.from(qtyMap.entries()).map(([key, unreserveQty]) => {
+    const [productId, locationId] = key.split('_');
+    return {
+      updateOne: {
+        filter: { productId, locationId },
+        update: { $inc: { reservedQty: -unreserveQty } },
+      },
+    };
+  });
 
   if (ops.length > 0) {
     await StockQuant.bulkWrite(ops, { session });
@@ -72,34 +82,38 @@ const unreserveStockForLines = async (session, moveLines) => {
 };
 
 const consumeStockForLines = async (session, moveLines, fromReserved = false) => {
-  const qtyByProduct = aggregateQtyByProduct(moveLines);
+  const qtyMap = aggregateQtyByProductAndLocation(moveLines);
 
-  for (const [productId, consumeQty] of qtyByProduct.entries()) {
-    const quant = await StockQuant.findOne({ productId }).session(session);
+  for (const [key, consumeQty] of qtyMap.entries()) {
+    const [productId, locationId] = key.split('_');
+    const quant = await StockQuant.findOne({ productId, locationId }).session(session);
     const quantity = quant ? quant.quantity : 0;
     const reservedQty = quant ? quant.reservedQty : 0;
     const availableQty = quantity - reservedQty;
 
     if (fromReserved) {
       if (reservedQty < consumeQty || quantity < consumeQty) {
-        throw new Error(`Insufficient reserved stock. Reserved: ${reservedQty}, Quantity: ${quantity}, Required: ${consumeQty}`);
+        throw new Error(`Insufficient reserved stock at location. Reserved: ${reservedQty}, Quantity: ${quantity}, Required: ${consumeQty}`);
       }
       continue;
     }
 
     if (availableQty < consumeQty) {
-      throw new Error(`Insufficient stock. Available: ${availableQty}, Required: ${consumeQty}`);
+      throw new Error(`Insufficient stock at location. Available: ${availableQty}, Required: ${consumeQty}`);
     }
   }
 
-  const ops = Array.from(qtyByProduct.entries()).map(([productId, consumeQty]) => ({
-    updateOne: {
-      filter: { productId },
-      update: fromReserved
-        ? { $inc: { quantity: -consumeQty, reservedQty: -consumeQty } }
-        : { $inc: { quantity: -consumeQty } },
-    },
-  }));
+  const ops = Array.from(qtyMap.entries()).map(([key, consumeQty]) => {
+    const [productId, locationId] = key.split('_');
+    return {
+      updateOne: {
+        filter: { productId, locationId },
+        update: fromReserved
+          ? { $inc: { quantity: -consumeQty, reservedQty: -consumeQty } }
+          : { $inc: { quantity: -consumeQty } },
+      },
+    };
+  });
 
   if (ops.length > 0) {
     await StockQuant.bulkWrite(ops, { session });
@@ -156,11 +170,12 @@ exports.createDelivery = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { reference: incomingRef, scheduledDate, notes, moveLines, status: requestedStatus } = req.body;
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, moveLines, status: requestedStatus, sourceLocation } = req.body;
     const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
     const initialStatus = allowedStatuses.includes(requestedStatus) ? requestedStatus : 'draft';
     const shouldReserve = initialStatus === 'ready';
     const shouldAutoPost = initialStatus === 'done';
+    const staffLocationId = req.user?.role === 'staff' ? req.user.locationId : null;
 
     if (initialStatus !== 'draft' && req.user?.role !== 'manager') {
       await session.abortTransaction();
@@ -170,28 +185,20 @@ exports.createDelivery = async (req, res, next) => {
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
         const qtyOrdered = Number(line?.qtyOrdered || 0);
-        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+        const locId = staffLocationId || line.fromLocationId || sourceLocation;
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0 || !locId || !mongoose.Types.ObjectId.isValid(locId);
       });
 
       if (hasInvalidLine) {
         await session.abortTransaction();
         return res.status(400).json({
           success: false,
-          message: 'Each move line must include a valid product and quantity greater than zero',
+          message: 'Each move line must include a valid product, valid location, and quantity greater than zero',
         });
       }
     }
 
     let reference = incomingRef?.trim();
-    if (reference) {
-      const exists = await StockPicking.exists({ reference }).session(session);
-      if (exists) {
-        await session.abortTransaction();
-        return res.status(400).json({ success: false, message: 'Reference already exists' });
-      }
-    } else {
-      reference = await generateReference('OUT');
-    }
 
     const [delivery] = await StockPicking.create(
       [
@@ -200,8 +207,10 @@ exports.createDelivery = async (req, res, next) => {
           pickingType: 'OUT',
           scheduledDate,
           notes,
+          supplierOrCustomer,
           status: initialStatus,
           isReturned: false,
+          sourceLocation: staffLocationId || sourceLocation || null,
           createdBy: req.user._id,
         },
       ],
@@ -216,7 +225,8 @@ exports.createDelivery = async (req, res, next) => {
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
-        fromLocationId: line.fromLocationId,
+        toLocationId: line.toLocationId || null,
+        fromLocationId: staffLocationId || line.fromLocationId || sourceLocation,
         status: initialStatus,
       }));
       createdLines = await StockMoveLine.insertMany(lines, { session });
@@ -337,22 +347,10 @@ exports.updateDelivery = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Delivery not found' });
     }
 
-    if (delivery.isReturned) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Return already processed. Delivery is immutable' });
-    }
 
-    if (delivery.isReturned) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Returned delivery is immutable' });
-    }
+    const { reference: incomingRef, supplierOrCustomer, scheduledDate, notes, status, moveLines, sourceLocation } = req.body;
+    const staffLocationId = req.user?.role === 'staff' ? req.user.locationId : null;
 
-    if (delivery.isReturned) {
-      await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Returned delivery is immutable' });
-    }
-
-    const { reference: incomingRef, scheduledDate, notes, status, moveLines } = req.body;
     const previousStatus = delivery.status;
     const nextStatus = status || previousStatus;
     const allowedStatuses = ['draft', 'waiting', 'ready', 'done', 'cancelled'];
@@ -373,6 +371,7 @@ exports.updateDelivery = async (req, res, next) => {
       const hasNonStatusChange =
         (incomingRef && incomingRef.trim() && incomingRef.trim() !== delivery.reference) ||
         scheduledDate !== undefined ||
+        supplierOrCustomer !== undefined ||
         notes !== undefined ||
         (Array.isArray(moveLines) && moveLines.length > 0);
 
@@ -390,14 +389,15 @@ exports.updateDelivery = async (req, res, next) => {
     if (Array.isArray(moveLines) && moveLines.length > 0) {
       const hasInvalidLine = moveLines.some((line) => {
         const qtyOrdered = Number(line?.qtyOrdered || 0);
-        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0;
+        const locId = staffLocationId || line.fromLocationId || sourceLocation;
+        return !line?.productId || !mongoose.Types.ObjectId.isValid(line.productId) || qtyOrdered <= 0 || !locId || !mongoose.Types.ObjectId.isValid(locId);
       });
 
       if (hasInvalidLine) {
         await session.abortTransaction();
         return res.status(400).json({
           success: false,
-          message: 'Each move line must include a valid product and quantity greater than zero',
+          message: 'Each move line must include a valid product, valid location, and quantity greater than zero',
         });
       }
     }
@@ -412,7 +412,9 @@ exports.updateDelivery = async (req, res, next) => {
     }
 
     if (scheduledDate !== undefined) delivery.scheduledDate = scheduledDate;
+    if (supplierOrCustomer !== undefined) delivery.supplierOrCustomer = supplierOrCustomer;
     if (notes !== undefined) delivery.notes = notes;
+    if (staffLocationId || sourceLocation !== undefined) delivery.sourceLocation = staffLocationId || sourceLocation;
     delivery.status = nextStatus;
 
     await delivery.save({ session });
@@ -425,7 +427,8 @@ exports.updateDelivery = async (req, res, next) => {
         qtyOrdered: line.qtyOrdered,
         qtyDone: line.qtyDone || 0,
         uom: line.uom || 'units',
-        fromLocationId: line.fromLocationId,
+        toLocationId: line.toLocationId || null,
+        fromLocationId: staffLocationId || line.fromLocationId || sourceLocation,
         status: nextStatus,
       }));
       await StockMoveLine.insertMany(lines, { session });
@@ -610,34 +613,6 @@ exports.validateDelivery = async (req, res, next) => {
  * @access  Private
  */
 exports.cancelDelivery = async (req, res, next) => {
-  try {
-    const delivery = await StockPicking.findOne({ _id: req.params.id, pickingType: 'OUT' });
-
-    if (!delivery) {
-      return res.status(404).json({ success: false, message: 'Delivery not found' });
-    }
-
-    if (delivery.status === 'done') {
-      return res.status(400).json({ success: false, message: 'Cannot cancel a completed delivery' });
-    }
-
-    delivery.status = 'cancelled';
-    await delivery.save();
-
-    await StockMoveLine.updateMany({ pickingId: delivery._id }, { status: 'cancelled' });
-
-    res.json({ success: true, message: 'Delivery cancelled', data: delivery });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Return delivery (reverse stock — re-add to inventory)
- * @route   POST /api/deliveries/:id/return
- * @access  Private (Manager)
- */
-exports.returnDelivery = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
 
@@ -649,60 +624,28 @@ exports.returnDelivery = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Delivery not found' });
     }
 
-    if (delivery.status !== 'done') {
+    if (delivery.status === 'done') {
       await session.abortTransaction();
-      return res.status(400).json({ success: false, message: 'Can only return a completed delivery' });
+      return res.status(400).json({ success: false, message: 'Cannot cancel a completed delivery' });
     }
 
-    const moveLines = await StockMoveLine.find({ pickingId: delivery._id }).session(session);
-
-    const returnRef = await generateReference('IN');
-    const returnPicking = await StockPicking.create(
-      [
-        {
-          reference: returnRef,
-          pickingType: 'IN',
-          status: 'done',
-          notes: `Return for ${delivery.reference}`,
-          createdBy: req.user._id,
-        },
-      ],
-      { session }
-    );
-
-    for (const line of moveLines) {
-      // Re-add stock
-      await StockQuant.findOneAndUpdate(
-        { productId: line.productId },
-        { $inc: { quantity: line.qtyDone } },
-        { upsert: true, session }
-      );
-
-      await StockMove.create(
-        [
-          {
-            reference: returnRef,
-            pickingId: returnPicking[0]._id,
-            productId: line.productId,
-            toLocationId: line.fromLocationId,
-            quantity: line.qtyDone,
-            uom: line.uom,
-            moveType: 'IN',
-            status: 'done',
-            createdBy: req.user._id,
-          },
-        ],
-        { session }
-      );
+    if (delivery.status === 'ready') {
+      const moveLines = await StockMoveLine.find({ pickingId: delivery._id }).session(session);
+      try {
+        await unreserveStockForLines(session, moveLines);
+      } catch (e) {
+        await session.abortTransaction();
+        return res.status(400).json({ success: false, message: e.message });
+      }
     }
 
-    delivery.isReturned = true;
-    delivery.returnedAt = new Date();
     delivery.status = 'cancelled';
     await delivery.save({ session });
 
+    await StockMoveLine.updateMany({ pickingId: delivery._id }, { status: 'cancelled' }, { session });
+
     await session.commitTransaction();
-    res.json({ success: true, message: 'Delivery returned successfully', data: { returnReference: returnRef } });
+    res.json({ success: true, message: 'Delivery cancelled', data: delivery });
   } catch (error) {
     await session.abortTransaction();
     next(error);
@@ -710,3 +653,5 @@ exports.returnDelivery = async (req, res, next) => {
     session.endSession();
   }
 };
+
+

@@ -47,14 +47,10 @@ export const NAV_ITEMS = [
       { label: "Reorder Rules", path: "/products/reorder-rules" },
     ],
   },
-  { label: "Move History", path: "/operations/moves" },
   {
-    // Manager only: warehouse & location configuration
-    label: "Settings",
+    // Manager only: location configuration
+    label: "Locations",
+    path: "/settings/locations",
     roles: ["manager"],
-    children: [
-      { label: "Warehouses", path: "/settings/warehouses" },
-      { label: "Locations", path: "/settings/locations" },
-    ],
   },
 ];

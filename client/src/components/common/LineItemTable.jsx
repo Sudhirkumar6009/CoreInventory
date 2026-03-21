@@ -38,6 +38,7 @@ export default function LineItemTable({
   locationLabel = 'Location',
   locationOptions,
   locationWarehouse,
+  hideQtyDone = false,
 }) {
   const [fetchedLocations, setFetchedLocations] = useState([])
 
@@ -93,7 +94,7 @@ export default function LineItemTable({
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">SKU ID</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty</th>
               <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">UoM</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty Done</th>
+              {!hideQtyDone && <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-28">Qty Done</th>}
               {showLocation && (
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase w-48">
                   {locationLabel}
@@ -116,13 +117,14 @@ export default function LineItemTable({
                   showLocation={showLocation}
                   locationField={locationField}
                   locations={resolvedLocations}
+                  hideQtyDone={hideQtyDone}
                 />
               )
             })}
             {(lines || []).length === 0 && (
               <tr>
                 <td
-                  colSpan={showLocation ? 7 : 6}
+                  colSpan={showLocation ? (hideQtyDone ? 6 : 7) : (hideQtyDone ? 5 : 6)}
                   className="px-4 py-8 text-center text-sm text-gray-400"
                 >
                   No product lines yet. Click &ldquo;Add a line&rdquo; below.
@@ -156,6 +158,7 @@ function LineRow({
   showLocation,
   locationField,
   locations,
+  hideQtyDone,
 }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [results, setResults] = useState([])
@@ -301,17 +304,19 @@ function LineRow({
         </select>
       </td>
 
-      <td className="px-4 py-2">
-        <input
-          type="number"
-          value={qtyDoneValue}
-          onChange={(e) => onPatch(lineId, { qtyDone: toNumberOrDefault(e.target.value, 0) })}
-          disabled={readOnly}
-          min="0"
-          step="0.01"
-          className="input-field text-sm"
-        />
-      </td>
+      {hideQtyDone ? null : (
+        <td className="px-4 py-2">
+          <input
+            type="number"
+            value={qtyDoneValue}
+            onChange={(e) => onPatch(lineId, { qtyDone: toNumberOrDefault(e.target.value, 0) })}
+            disabled={readOnly}
+            min="0"
+            step="0.01"
+            className="input-field text-sm"
+          />
+        </td>
+      )}
 
       {showLocation && (
         <td className="px-4 py-2">

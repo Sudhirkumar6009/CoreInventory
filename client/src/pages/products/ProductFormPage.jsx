@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { productService } from "../../api/productService";
+import { warehouseService } from "../../api/warehouseService";
 import { useDocumentTitle } from "../../hooks/useDocumentTitle";
 import Button from "../../components/common/Button";
 import Spinner from "../../components/common/Spinner";
@@ -43,6 +44,7 @@ export default function ProductFormPage() {
     register,
     handleSubmit,
     reset,
+    watch,
     formState: { errors },
   } = useForm();
 
@@ -57,6 +59,11 @@ export default function ProductFormPage() {
     queryKey: ["categories"],
     queryFn: () =>
       productService.getCategories().then((r) => r.data?.data || []),
+  });
+
+  const { data: locations } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => warehouseService.getLocations().then(r => r.data?.data || r.data?.locations || []),
   });
 
   useEffect(() => {
@@ -76,6 +83,7 @@ export default function ProductFormPage() {
         uom: "units",
         perUnitCost: 0,
         initialStock: 0,
+        initialLocationId: "",
       });
     }
   }, [product, isNew, reset]);
@@ -90,10 +98,7 @@ export default function ProductFormPage() {
 
     if (isNew && data.initialStock !== undefined && data.initialStock !== "") {
       payload.initialStock = Number(data.initialStock);
-    }
-
-    if (isNew && data.initialStock !== undefined && data.initialStock !== "") {
-      payload.initialStock = Number(data.initialStock);
+      payload.initialLocationId = data.initialLocationId || null;
     }
 
     if (!isNew && data.perUnitCost !== undefined && data.perUnitCost !== "") {
@@ -251,18 +256,45 @@ export default function ProductFormPage() {
             </div>
           )}
           {isNew && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Initial Stock (optional)
-              </label>
-              <input
-                type="number"
-                {...register("initialStock", { min: 0 })}
-                className="input-field"
-                placeholder="0"
-                min="0"
-                step="0.01"
-              />
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Initial Stock (optional)
+                </label>
+                <input
+                  type="number"
+                  {...register("initialStock", { min: 0 })}
+                  className="input-field"
+                  placeholder="0"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              {Number(watch("initialStock") || 0) > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Initial Stock Location *
+                  </label>
+                  <select
+                    {...register("initialLocationId", {
+                      required: "Location is required when setting initial stock"
+                    })}
+                    className="input-field"
+                  >
+                    <option value="">Select location...</option>
+                    {(locations || []).map((loc) => (
+                      <option key={loc._id || loc.id} value={loc._id || loc.id}>
+                        {loc.name} {loc.shortCode ? `(${loc.shortCode})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.initialLocationId && (
+                    <p className="text-xs text-red-500 mt-1">
+                      {errors.initialLocationId.message}
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

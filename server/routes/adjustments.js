@@ -6,7 +6,6 @@ const {
   createAdjustment,
   getAdjustment,
   updateAdjustment,
-  validateAdjustment,
 } = require("../controllers/adjustmentController");
 
 router.use(protect);
@@ -15,7 +14,4 @@ router.use(protect);
 
 router.route("/").get(getAdjustments).post(createAdjustment);
 router.route("/:id").get(getAdjustment).put(updateAdjustment);
-
-router.post("/:id/validate", validateAdjustment);
-
 module.exports = router;

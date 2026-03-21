@@ -79,24 +79,64 @@ exports.getMoves = async (req, res, next) => {
       dateFrom,
       dateTo,
       search,
+      status,
+      excludeType,
       page = 1,
       limit = 25,
       sort = '-createdAt',
     } = req.query;
 
     const filter = {};
-
     const requestedType = moveType || type;
 
-    if (req.user?.role === 'staff') {
-      filter.moveType = 'INTERNAL';
+    // Search logic: reference or product name/sku
+    if (search) {
+      const productIds = await require('../models/Product').find({
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { sku: { $regex: search, $options: 'i' } }
+        ]
+      }).distinct('_id');
+
+      filter.$or = [
+        { reference: { $regex: search, $options: 'i' } },
+        { productId: { $in: productIds } }
+      ];
     }
 
-    if (requestedType && req.user?.role !== 'staff') filter.moveType = requestedType;
-    if (product) filter.productId = product;
-    if (search) {
-      filter.reference = { $regex: search, $options: 'i' };
+    // Role-based constraints
+    if (req.user?.role === 'staff' && req.user.locationId) {
+      const locId = req.user.locationId;
+      const staffLocFilter = {
+        $or: [
+          { fromLocationId: locId },
+          { toLocationId: locId }
+        ]
+      };
+      
+      // Combine with existing filters
+      if (filter.$or) {
+        // If we already have search $or, we must wrap it
+        const searchOr = filter.$or;
+        delete filter.$or;
+        filter.$and = [
+          { $or: searchOr },
+          staffLocFilter
+        ];
+      } else {
+        Object.assign(filter, staffLocFilter);
+      }
     }
+
+    if (requestedType) {
+      filter.moveType = requestedType;
+    } else if (excludeType) {
+      filter.moveType = { $ne: excludeType };
+    }
+
+    if (product) filter.productId = product;
+    if (status) filter.status = status;
+
     if (dateFrom || dateTo) {
       filter.createdAt = {};
       if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);

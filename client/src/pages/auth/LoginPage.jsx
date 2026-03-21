@@ -1,11 +1,26 @@
 import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
+import { EyeIcon, EyeSlashIcon, InformationCircleIcon } from '@heroicons/react/24/outline'
 import { authService } from '../../api/authService'
 import { useAuthStore } from '../../store/authStore'
 import Button from '../../components/common/Button'
 import toast from 'react-hot-toast'
+
+const DEMO_ACCOUNTS = [
+  {
+    key: 'manager',
+    label: 'Manager Demo Account',
+    email: 'Manager1@gmail.com',
+    password: 'Test@123',
+  },
+  {
+    key: 'staff',
+    label: 'Staff Demo Account',
+    email: 'john1234@gmail.com',
+    password: 'Test@123',
+  },
+]
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -14,7 +29,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  const { register, handleSubmit, formState: { errors } } = useForm()
+  const { register, handleSubmit, setValue, formState: { errors } } = useForm()
+
+  const autoFillCredentials = (account) => {
+    setValue('email', account.email, { shouldValidate: true })
+    setValue('password', account.password, { shouldValidate: true })
+  }
 
   const onSubmit = async (data) => {
     setLoading(true)
@@ -41,6 +61,33 @@ export default function LoginPage() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+      <div className="space-y-3">
+        {DEMO_ACCOUNTS.map((account) => (
+          <div
+            key={account.key}
+            className="rounded-xl border border-brand-accent/40 bg-brand-accent/5 p-4"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="flex items-center gap-2 text-sm font-semibold text-brand-accent">
+                  <InformationCircleIcon className="h-5 w-5" />
+                  {account.label}
+                </p>
+                <p className="mt-2 text-sm text-gray-700">Email: {account.email}</p>
+                <p className="text-sm text-gray-700">Password: {account.password}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => autoFillCredentials(account)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
+              >
+                Auto Fill
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
         <input

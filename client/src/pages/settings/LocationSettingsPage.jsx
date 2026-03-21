@@ -13,7 +13,7 @@ export default function LocationSettingsPage() {
   useDocumentTitle('Locations')
   const queryClient = useQueryClient()
   const [selected, setSelected] = useState(null)
-  const [formData, setFormData] = useState({ name: '', shortCode: '', warehouse: '' })
+  const [formData, setFormData] = useState({ name: '', shortCode: '' })
   const [showDelete, setShowDelete] = useState(false)
 
   const { data: locations, isLoading } = useQuery({
@@ -29,17 +29,19 @@ export default function LocationSettingsPage() {
   useEffect(() => {
     if (selected && !selected._new) {
       setFormData({
-        name: selected.name || '', shortCode: selected.shortCode || '',
-        warehouse: selected.warehouseId?._id || selected.warehouseId || selected.warehouse?._id || selected.warehouse || '',
+        name: selected.name || '', shortCode: selected.shortCode || ''
       })
     }
   }, [selected])
 
-  const buildPayload = (data) => ({
-    name: data.name,
-    shortCode: data.shortCode,
-    warehouseId: data.warehouse,
-  })
+  const buildPayload = (data) => {
+    const warehouseId = (warehouses && warehouses.length > 0) ? (warehouses[0]._id || warehouses[0].id) : null;
+    return {
+      name: data.name,
+      shortCode: data.shortCode,
+      warehouseId,
+    };
+  }
 
   const saveMutation = useMutation({
     mutationFn: (d) => {
@@ -65,7 +67,7 @@ export default function LocationSettingsPage() {
     },
   })
 
-  const addNew = () => { setSelected({ _new: true }); setFormData({ name: '', shortCode: '', warehouse: '' }) }
+  const addNew = () => { setSelected({ _new: true }); setFormData({ name: '', shortCode: '' }) }
 
   if (isLoading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>
 
@@ -107,13 +109,7 @@ export default function LocationSettingsPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Short Code *</label>
                   <input value={formData.shortCode} onChange={(e) => setFormData({ ...formData, shortCode: e.target.value })} className="input-field" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Warehouse *</label>
-                  <select value={formData.warehouse} onChange={(e) => setFormData({ ...formData, warehouse: e.target.value })} className="input-field">
-                    <option value="">Select warehouse...</option>
-                    {(warehouses || []).map((w) => <option key={w._id || w.id} value={w._id || w.id}>{w.name}</option>)}
-                  </select>
-                </div>
+
                 <p className="text-xs text-gray-400">Only defines the physical location of an ordinary inventory.</p>
                 <div className="flex items-center gap-3 pt-2">
                   <Button onClick={() => saveMutation.mutate(formData)} loading={saveMutation.isPending}>Save</Button>

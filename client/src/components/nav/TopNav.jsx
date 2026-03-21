@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   Bars3Icon,
-  MagnifyingGlassIcon,
   ChevronDownIcon,
+  ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { useUiStore } from "../../store/uiStore";
 import { useAuthStore } from "../../store/authStore";
 import { useRole } from "../../hooks/useRole";
 import { NAV_ITEMS } from "../../constants";
+import { queryClient } from "../../main";
+import toast from "react-hot-toast";
 import clsx from "clsx";
 
 export default function TopNav() {
@@ -20,7 +22,21 @@ export default function TopNav() {
   const { role } = useRole();
   const [openDropdown, setOpenDropdown] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const dropdownRef = useRef(null);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await queryClient.invalidateQueries();
+      await queryClient.refetchQueries({ type: 'active' });
+      toast.success('Data refreshed successfully');
+    } catch {
+      toast.error('Refresh failed');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const handler = (e) => {
@@ -148,8 +164,22 @@ export default function TopNav() {
             ))}
           </div>
 
-          {/* Right: Role badge, Search, Avatar */}
+          {/* Right: Refresh, Role badge, Avatar */}
           <div className="flex items-center gap-2">
+            {/* Global Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title="Refresh all data from database"
+              className="p-2 rounded-lg hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              <ArrowPathIcon
+                className={clsx(
+                  "w-5 h-5",
+                  isRefreshing && "animate-spin"
+                )}
+              />
+            </button>
             {/* Role indicator badge */}
             <span
               className={clsx(

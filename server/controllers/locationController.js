@@ -7,13 +7,7 @@ const Location = require('../models/Location');
  */
 exports.getLocations = async (req, res, next) => {
   try {
-    const { warehouse } = req.query;
-
-    const filter = {};
-    if (warehouse) filter.warehouseId = warehouse;
-
-    const locations = await Location.find(filter)
-      .populate('warehouseId', 'name shortCode')
+    const locations = await Location.find()
       .sort('name')
       .lean();
 
@@ -31,8 +25,7 @@ exports.getLocations = async (req, res, next) => {
 exports.createLocation = async (req, res, next) => {
   try {
     const location = await Location.create(req.body);
-    const populated = await Location.findById(location._id).populate('warehouseId', 'name shortCode');
-    res.status(201).json({ success: true, data: populated });
+    res.status(201).json({ success: true, data: location });
   } catch (error) {
     next(error);
   }
@@ -46,7 +39,6 @@ exports.createLocation = async (req, res, next) => {
 exports.getLocation = async (req, res, next) => {
   try {
     const location = await Location.findById(req.params.id)
-      .populate('warehouseId', 'name shortCode')
       .lean();
 
     if (!location) {
@@ -72,7 +64,7 @@ exports.updateLocation = async (req, res, next) => {
     const location = await Location.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
       runValidators: true,
-    }).populate('warehouseId', 'name shortCode');
+    });
 
     if (!location) {
       return res.status(404).json({ success: false, message: 'Location not found' });

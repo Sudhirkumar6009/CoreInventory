@@ -48,7 +48,7 @@ const stockMoveSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['done'],
+      enum: ['draft', 'waiting', 'ready', 'done', 'cancelled'],
       default: 'done',
     },
     createdBy: {

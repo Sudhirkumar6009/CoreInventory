@@ -62,6 +62,7 @@ exports.getProducts = async (req, res, next) => {
     const {
       search,
       category,
+      locationId,
       page = 1,
       limit = 25,
       sort = "-createdAt",
@@ -92,8 +93,13 @@ exports.getProducts = async (req, res, next) => {
     let stockMap = new Map();
 
     if (productIds.length > 0) {
+      const stockMatch = { productId: { $in: productIds } };
+      if (locationId && mongoose.Types.ObjectId.isValid(locationId)) {
+        stockMatch.locationId = new mongoose.Types.ObjectId(locationId);
+      }
+
       const stockSummary = await StockQuant.aggregate([
-        { $match: { productId: { $in: productIds } } },
+        { $match: stockMatch },
         {
           $group: {
             _id: "$productId",
@@ -149,7 +155,7 @@ exports.createProduct = async (req, res, next) => {
   session.startTransaction();
 
   try {
-    const { name, sku, categoryId, uom, initialStock } = req.body;
+    const { name, sku, categoryId, uom, initialStock, initialLocationId } = req.body;
 
     const payload = {
       name,
@@ -162,8 +168,12 @@ exports.createProduct = async (req, res, next) => {
     const [product] = await Product.create([payload], { session });
 
     if (payload.initialStock > 0) {
+      if (!initialLocationId || !mongoose.Types.ObjectId.isValid(initialLocationId)) {
+        throw new Error("Initial stock requires a valid initialLocationId");
+      }
+
       await StockQuant.findOneAndUpdate(
-        { productId: product._id },
+        { productId: product._id, locationId: initialLocationId },
         {
           $set: {
             quantity: payload.initialStock,
@@ -320,9 +330,22 @@ exports.getProductStock = async (req, res, next) => {
         .json({ success: false, message: "Product not found" });
     }
 
-    const stockQuant = await StockQuant.findOne({ productId: product._id }).lean();
-    const totalReserved = stockQuant?.reservedQty || 0;
-    const totalOnHand = stockQuant?.quantity || 0;
+    const stockQuants = await StockQuant.find({ productId: product._id })
+      .populate('locationId', 'name shortCode')
+      .lean();
+    
+    let totalReserved = 0;
+    let totalOnHand = 0;
+    const byLocation = stockQuants.map((sq) => {
+      totalReserved += sq.reservedQty || 0;
+      totalOnHand += sq.quantity || 0;
+      return {
+        locationId: sq.locationId?._id || sq.locationId,
+        locationName: sq.locationId?.name || 'Unknown',
+        onHand: sq.quantity || 0,
+        reservedQty: sq.reservedQty || 0,
+      };
+    });
 
     res.json({
       success: true,
@@ -330,7 +353,7 @@ exports.getProductStock = async (req, res, next) => {
         product: { id: product._id, name: product.name, sku: product.sku, uom: product.uom },
         totalOnHand,
         totalReserved,
-        byLocation: [],
+        byLocation,
       },
     });
   } catch (error) {

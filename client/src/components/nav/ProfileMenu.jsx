@@ -48,9 +48,9 @@ const ALL_MENU_ITEMS = [
   { label: "Move History", icon: ClockIcon, path: "/operations/moves" },
   // Manager-only
   {
-    label: "Settings",
+    label: "Locations",
     icon: Cog6ToothIcon,
-    path: "/settings/warehouses",
+    path: "/settings/locations",
     roles: ["manager"],
   },
 ];

@@ -68,6 +68,7 @@ export default function ReceiptFormPage() {
     if (receipt) {
       reset({
         reference: receipt.reference,
+        supplierOrCustomer: receipt.supplierOrCustomer || '',
         responsibleUser: receipt.createdBy?.email || currentUser?.email || '',
         scheduledDate: receipt.scheduledDate?.split('T')[0],
       })
@@ -76,8 +77,9 @@ export default function ReceiptFormPage() {
     } else if (isNew) {
       reset({
         reference: previewRef('IN'),
+        supplierOrCustomer: '',
         responsibleUser: currentUser?.email || '',
-        scheduledDate: '',
+        scheduledDate: new Date().toISOString().split('T')[0],
       })
     }
   }, [receipt, isNew, reset, currentUser?.email]);
@@ -103,19 +105,6 @@ export default function ReceiptFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
 
-  const validateMutation = useMutation({
-    mutationFn: () => receiptService.validate(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt", id] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-kpis"] });
-      queryClient.invalidateQueries({ queryKey: ["moves"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Receipt validated! Stock has been updated.");
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Validation failed"),
-  });
 
   const cancelMutation = useMutation({
     mutationFn: () => receiptService.cancel(id),
@@ -129,17 +118,7 @@ export default function ReceiptFormPage() {
       toast.error(err.response?.data?.message || "Cancel failed"),
   });
 
-  const returnMutation = useMutation({
-    mutationFn: () => receiptService.return_(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["receipts"] });
-      queryClient.invalidateQueries({ queryKey: ["receipt", id] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Return processed. Stock reversed.");
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Return failed"),
-  });
+
 
   const onSave = (formData) => {
     const hasPartialLines = (lines || []).some((line) => {
@@ -173,6 +152,7 @@ export default function ReceiptFormPage() {
 
     saveMutation.mutate({
       reference: formData.reference,
+      supplierOrCustomer: formData.supplierOrCustomer,
       scheduledDate: formData.scheduledDate,
       status: isManager ? status : 'draft',
       moveLines,
@@ -225,23 +205,9 @@ export default function ReceiptFormPage() {
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
                 Cancel
               </Button>
-              <Button
-                onClick={() => validateMutation.mutate()}
-                loading={validateMutation.isPending}
-              >
-                {status === "ready" ? "Mark as Done" : "Validate"}
-              </Button>
             </>
           )}
-          {status === "done" && (
-            <Button
-              variant="secondary"
-              onClick={() => returnMutation.mutate()}
-              loading={returnMutation.isPending}
-            >
-              Return
-            </Button>
-          )}
+
           {status === "cancelled" && (
             <Button
               variant="secondary"
@@ -275,6 +241,23 @@ export default function ReceiptFormPage() {
             {errors.reference && (
               <p className="text-xs text-red-500 mt-1">
                 {errors.reference.message}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Supplier Name *
+            </label>
+            <input
+              {...register("supplierOrCustomer", { required: "Supplier Name is required" })}
+              className="input-field"
+              placeholder="e.g. Acme Corp"
+              disabled={isReadOnly}
+            />
+            {errors.supplierOrCustomer && (
+              <p className="text-xs text-red-500 mt-1">
+                {errors.supplierOrCustomer.message}
               </p>
             )}
           </div>
@@ -339,6 +322,7 @@ export default function ReceiptFormPage() {
           showLocation={true}
           locationField="toLocationId"
           locationLabel="Destination Location"
+          hideQtyDone={status !== 'ready' && status !== 'done'}
         />
       </div>
 

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { productService } from '../../api/productService'
+import { warehouseService } from '../../api/warehouseService'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { useRole } from '../../hooks/useRole'
 import FilterBar from '../../components/common/FilterBar'
@@ -12,7 +13,12 @@ export default function ProductListPage() {
   useDocumentTitle('Products')
   const navigate = useNavigate()
   const { isManager } = useRole()
-  const [filters, setFilters] = useState({ search: '', page: 1 })
+  const [filters, setFilters] = useState({ search: '', page: 1, locationId: '' })
+
+  const { data: locationsData } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => warehouseService.getLocations().then(r => r.data?.data || r.data?.locations || []),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ["products", filters],
@@ -38,6 +44,10 @@ export default function ProductListPage() {
   const handleSearch = useCallback((search) => {
     setFilters((f) => ({ ...f, search, page: 1 }));
   }, []);
+
+  const handleLocationChange = useCallback((e) => {
+    setFilters((f) => ({ ...f, locationId: e.target.value, page: 1 }));
+  }, []);
   const items = data?.items || [];
 
   return (
@@ -46,6 +56,20 @@ export default function ProductListPage() {
       <div className="bg-blue-50 border border-blue-100 rounded-lg px-4 py-2.5 mb-5 text-sm text-blue-700">
         Stock quantities update automatically via Receipts, Deliveries,
         Transfers, and Adjustments.
+      </div>
+      <div className="flex items-center justify-end mb-4">
+        <select
+          value={filters.locationId}
+          onChange={handleLocationChange}
+          className="input-field w-auto min-w-[200px] bg-white text-sm"
+        >
+          <option value="">Total (All Locations)</option>
+          {(locationsData || []).map((loc) => (
+            <option key={loc._id || loc.id} value={loc._id || loc.id}>
+              {loc.name} {loc.shortCode ? `(${loc.shortCode})` : ''}
+            </option>
+          ))}
+        </select>
       </div>
       <FilterBar
         module="products"
