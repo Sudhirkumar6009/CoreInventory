@@ -9,13 +9,11 @@ const {
   deleteLocation,
 } = require('../controllers/locationController');
 
-router.use(protect);
-
-router.route('/').get(getLocations).post(authorize('manager'), createLocation);
+router.route('/').get(getLocations).post(protect, authorize('manager'), createLocation);
 router
   .route('/:id')
-  .get(getLocation)
-  .put(authorize('manager'), updateLocation)
-  .delete(authorize('manager'), deleteLocation);
+  .get(protect, getLocation)
+  .put(protect, authorize('manager'), updateLocation)
+  .delete(protect, authorize('manager'), deleteLocation);
 
 module.exports = router;

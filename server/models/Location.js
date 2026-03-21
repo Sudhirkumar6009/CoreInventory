@@ -13,18 +13,13 @@ const locationSchema = new mongoose.Schema(
       trim: true,
       uppercase: true,
     },
-    warehouseId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Warehouse',
-      required: [true, 'Warehouse is required'],
-    },
   },
   {
     timestamps: true,
   }
 );
 
-// Compound index: unique short code within a warehouse
-locationSchema.index({ shortCode: 1, warehouseId: 1 }, { unique: true });
+// Index: unique short code globally (single warehouse architecture)
+locationSchema.index({ shortCode: 1 }, { unique: true });
 
 module.exports = mongoose.model('Location', locationSchema);

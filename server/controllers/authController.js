@@ -22,7 +22,14 @@ const generateTokens = (userId) => {
  */
 exports.register = async (req, res, next) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, locationId } = req.body;
+
+    const normalizedRole = role ? role.toLowerCase() : 'staff';
+
+    // If staff, require location
+    if (normalizedRole === 'staff' && !locationId) {
+      return res.status(400).json({ success: false, message: 'Location is required for staff members' });
+    }
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -44,7 +51,8 @@ exports.register = async (req, res, next) => {
       name,
       email,
       passwordHash: password, // Will be hashed by pre-save hook
-      role: role ? role.toLowerCase() : 'staff',
+      role: normalizedRole,
+      locationId: normalizedRole === 'staff' ? locationId : undefined,
       isActive: false,
     });
 
@@ -111,7 +119,7 @@ exports.login = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        user: { id: user._id, name: user.name, email: user.email, role: user.role },
+        user: { id: user._id, name: user.name, email: user.email, role: user.role, locationId: user.locationId },
         accessToken,
         refreshToken,
       },
@@ -289,6 +297,7 @@ exports.getMe = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        locationId: user.locationId,
         isActive: user.isActive,
         createdAt: user.createdAt,
       },

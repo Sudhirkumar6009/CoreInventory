@@ -22,6 +22,7 @@ api.interceptors.response.use(
       || requestUrl.includes('/auth/send-otp')
       || requestUrl.includes('/auth/verify-otp')
       || requestUrl.includes('/auth/reset-password')
+      || requestUrl.includes('/locations')
 
     if (status === 401 && !isAuthRequest) {
       useAuthStore.getState().logout()

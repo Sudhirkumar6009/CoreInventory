@@ -82,6 +82,7 @@ export default function DeliveryFormPage() {
         : "draft";
       reset({
         reference: delivery.reference,
+        supplierOrCustomer: delivery.supplierOrCustomer || "",
         scheduledDate: toDateInputValue(delivery.scheduledDate),
         carrier: delivery.carrier,
       });
@@ -98,7 +99,7 @@ export default function DeliveryFormPage() {
       );
       setStatus(nextStatus);
     } else if (isNew) {
-      reset({ reference: previewRef("OUT"), scheduledDate: "", carrier: "" });
+      reset({ reference: previewRef("OUT"), supplierOrCustomer: "", scheduledDate: new Date().toISOString().split('T')[0], carrier: "" });
       setLines([]);
       setStatus("draft");
     }
@@ -124,19 +125,6 @@ export default function DeliveryFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
 
-  const validateMutation = useMutation({
-    mutationFn: () => deliveryService.validate(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["deliveries"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery", id] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-kpis"] });
-      queryClient.invalidateQueries({ queryKey: ["moves"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Delivery validated! Stock has been reduced.");
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Validation failed"),
-  });
 
   const cancelMutation = useMutation({
     mutationFn: () => deliveryService.cancel(id),
@@ -150,17 +138,7 @@ export default function DeliveryFormPage() {
       toast.error(err.response?.data?.message || "Cancel failed"),
   });
 
-  const returnMutation = useMutation({
-    mutationFn: () => deliveryService.return_(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["deliveries"] });
-      queryClient.invalidateQueries({ queryKey: ["delivery", id] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Return processed. Stock reversed.");
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Return failed"),
-  });
+
 
   const onSave = (formData) => {
     const hasPartialLines = (lines || []).some((line) => {
@@ -251,23 +229,9 @@ export default function DeliveryFormPage() {
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
                 Cancel
               </Button>
-              <Button
-                onClick={() => validateMutation.mutate()}
-                loading={validateMutation.isPending}
-              >
-                {status === "ready" ? "Mark as Done" : "Validate"}
-              </Button>
             </>
           )}
-          {status === "done" && (
-            <Button
-              variant="secondary"
-              onClick={() => returnMutation.mutate()}
-              loading={returnMutation.isPending}
-            >
-              Return
-            </Button>
-          )}
+
           {status === "cancelled" && (
             <Button
               variant="secondary"
@@ -303,6 +267,22 @@ export default function DeliveryFormPage() {
             {errors.reference && (
               <p className="text-xs text-red-500 mt-1">
                 {errors.reference.message}
+              </p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Customer / Vendor *
+            </label>
+            <input
+              {...register("supplierOrCustomer", { required: "Customer / Vendor is required" })}
+              className="input-field"
+              placeholder="e.g. Acme Corp"
+              disabled={isReadOnly}
+            />
+            {errors.supplierOrCustomer && (
+              <p className="text-xs text-red-500 mt-1">
+                {errors.supplierOrCustomer.message}
               </p>
             )}
           </div>
@@ -369,6 +349,7 @@ export default function DeliveryFormPage() {
           showLocation={true}
           locationField="fromLocationId"
           locationLabel="Source Location"
+          hideQtyDone={status !== 'ready' && status !== 'done'}
         />
       </div>
 

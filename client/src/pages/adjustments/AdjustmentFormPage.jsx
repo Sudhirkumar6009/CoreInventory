@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { adjustmentService } from '../../api/adjustmentService'
 import { productService } from '../../api/productService'
 import { warehouseService } from '../../api/warehouseService'
+import { useAuthStore } from '../../store/authStore'
+import { useRole } from '../../hooks/useRole'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { previewRef } from '../../utils/generateReference'
 import Button from '../../components/common/Button'
@@ -34,18 +36,41 @@ export default function AdjustmentFormPage() {
   const queryClient = useQueryClient()
   const isNew = !id || id === 'new' || id === 'undefined'
   useDocumentTitle(isNew ? 'New Adjustment' : `Adjustment ${id}`)
+  const { isStaff } = useRole()
+  const user = useAuthStore((s) => s.user)
+  const staffLocationId = isStaff ? (user?.locationId || '') : null
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm()
+  const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm()
   const [lines, setLines] = useState([])
 
+  // Watch the selected locationId so we can fetch location-specific stock
+  const selectedLocationId = watch('locationId') || staffLocationId || ''
+
+  // Only fetch locations list when a manager is using the form
   const { data: locations = [] } = useQuery({
     queryKey: ['locations'],
     queryFn: () => warehouseService.getLocations().then((r) => r.data?.data || r.data?.locations || r.data || []),
+    enabled: !isStaff,
   })
 
-  const { data: products = [] } = useQuery({
-    queryKey: ['products', 'adjustment-form'],
-    queryFn: () => productService.getAll({ limit: 500 }).then((r) => r.data?.data || r.data?.products || r.data || []),
+  // For staff, look up the location name to display as a label
+  const { data: staffLocationData } = useQuery({
+    queryKey: ['location', staffLocationId],
+    queryFn: () => warehouseService.getLocations().then((r) => {
+      const all = r.data?.data || r.data?.locations || r.data || []
+      return all.find((l) => String(l._id || l.id) === String(staffLocationId))
+    }),
+    enabled: isStaff && !!staffLocationId,
+  })
+
+  const { data: products = [], isLoading: productsLoading } = useQuery({
+    queryKey: ['products', 'adjustment-form', selectedLocationId],
+    queryFn: () => productService.getAll({
+      limit: 500,
+      ...(selectedLocationId ? { locationId: selectedLocationId } : {}),
+    }).then((r) => r.data?.data || r.data?.products || r.data || []),
+    // Re-run whenever the location changes so onHand is location-specific
+    enabled: true,
   })
 
   const {
@@ -80,10 +105,21 @@ export default function AdjustmentFormPage() {
       })
       setLines(loadedLines)
     } else if (isNew) {
-      reset({ reference: buildRandomAdjustmentRef(), date: new Date().toISOString().split('T')[0], locationId: '' })
+      reset({
+        reference: buildRandomAdjustmentRef(),
+        date: new Date().toISOString().split('T')[0],
+        locationId: staffLocationId || '',
+      })
       setLines([])
     }
-  }, [adjustment, isNew, reset])
+  }, [adjustment, isNew, reset, staffLocationId])
+
+  // For staff, always ensure their locationId is set in the form
+  useEffect(() => {
+    if (isStaff && staffLocationId) {
+      setValue('locationId', staffLocationId)
+    }
+  }, [isStaff, staffLocationId, setValue])
 
   const saveMutation = useMutation({
     mutationFn: (data) => isNew ? adjustmentService.create(data) : adjustmentService.update(id, data),
@@ -160,6 +196,7 @@ export default function AdjustmentFormPage() {
           productId: product._id || product.id,
           itemName: product.name,
           sku: product.sku || '',
+          // onHand is location-specific because the products query sends locationId
           recordedQty: Number(product.onHand || 0),
         }
         : line
@@ -191,14 +228,26 @@ export default function AdjustmentFormPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">Date</label>
             <input type="date" {...register('date')} className="input-field" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
-            <select {...register('locationId', { required: 'Location is required' })} className="input-field">
-              <option value="">Select location...</option>
-              {(locations || []).map((l) => <option key={l._id || l.id} value={l._id || l.id}>{l.name}</option>)}
-            </select>
-            {errors.locationId && <p className="text-xs text-red-500 mt-1">{errors.locationId.message}</p>}
-          </div>
+          {/* Location: hidden for staff (auto-set from their profile), visible dropdown for managers */}
+          {isStaff ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
+              <div className="input-field bg-gray-50 text-gray-600 cursor-not-allowed">
+                {staffLocationData?.name || 'Your assigned location'}
+              </div>
+              {/* Hidden input so react-hook-form still has the value */}
+              <input type="hidden" {...register('locationId', { required: 'Location is required' })} />
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Location</label>
+              <select {...register('locationId', { required: 'Location is required' })} className="input-field">
+                <option value="">Select location...</option>
+                {(locations || []).map((l) => <option key={l._id || l.id} value={l._id || l.id}>{l.name}</option>)}
+              </select>
+              {errors.locationId && <p className="text-xs text-red-500 mt-1">{errors.locationId.message}</p>}
+            </div>
+          )}
         </div>
       </form>
 

@@ -7,6 +7,11 @@ const stockQuantSchema = new mongoose.Schema(
       ref: 'Product',
       required: true,
     },
+    locationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Location',
+      required: true,
+    },
     quantity: {
       type: Number,
       default: 0,
@@ -21,7 +26,7 @@ const stockQuantSchema = new mongoose.Schema(
   }
 );
 
-// Unique stock row per product.
-stockQuantSchema.index({ productId: 1 }, { unique: true });
+// Unique stock row per product and location.
+stockQuantSchema.index({ productId: 1, locationId: 1 }, { unique: true });
 
 module.exports = mongoose.model('StockQuant', stockQuantSchema);

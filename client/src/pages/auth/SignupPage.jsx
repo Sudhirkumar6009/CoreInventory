@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
+import { useQuery } from '@tanstack/react-query'
 import { authService } from '../../api/authService'
+import { warehouseService } from '../../api/warehouseService'
 import Button from '../../components/common/Button'
 import toast from 'react-hot-toast'
 
@@ -13,6 +15,12 @@ export default function SignupPage() {
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm()
   const password = watch('password')
+  const role = watch('role')
+
+  const { data: locations } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => warehouseService.getLocations().then(r => r.data?.data || r.data?.locations || []),
+  })
 
   const onSubmit = async (data) => {
     setLoading(true)
@@ -94,6 +102,24 @@ export default function SignupPage() {
         </select>
         {errors.role && <p className="text-xs text-red-500 mt-1">{errors.role.message}</p>}
       </div>
+
+      {role === 'staff' && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">Assigned Location</label>
+          <select
+            {...register('locationId', { required: 'Location is required for staff' })}
+            className="input-field"
+          >
+            <option value="">Select location...</option>
+            {(locations || []).map(loc => (
+              <option key={loc._id || loc.id} value={loc._id || loc.id}>
+                {loc.name} {loc.shortCode ? `(${loc.shortCode})` : ''}
+              </option>
+            ))}
+          </select>
+          {errors.locationId && <p className="text-xs text-red-500 mt-1">{errors.locationId.message}</p>}
+        </div>
+      )}
 
       <Button type="submit" loading={loading} className="w-full" size="lg">
         Create Account

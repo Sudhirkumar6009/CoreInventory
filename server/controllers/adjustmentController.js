@@ -5,7 +5,7 @@ const StockMove = require('../models/StockMove');
 const Product = require('../models/Product');
 const generateReference = require('../utils/generateReference');
 
-const normalizeLines = async (inputLines = []) => {
+const normalizeLines = async (inputLines = [], locationId) => {
   const normalized = [];
 
   for (const raw of inputLines) {
@@ -21,7 +21,7 @@ const normalizeLines = async (inputLines = []) => {
 
     if (!product) continue;
 
-    const quant = await StockQuant.findOne({ productId: product._id }).select('quantity').lean();
+    const quant = await StockQuant.findOne({ productId: product._id, locationId }).select('quantity').lean();
     const recordedQty = Number(quant?.quantity || 0);
     const updatedQty = Number(raw?.updatedQty ?? raw?.countedQty ?? raw?.qty ?? 0);
 
@@ -43,7 +43,7 @@ const normalizeLines = async (inputLines = []) => {
 const applyAdjustmentLines = async (session, adjustment, userId) => {
   for (const line of adjustment.lines) {
     await StockQuant.findOneAndUpdate(
-      { productId: line.productId },
+      { productId: line.productId, locationId: adjustment.locationId },
       { $inc: { quantity: line.delta } },
       { upsert: true, session }
     );
@@ -72,7 +72,7 @@ const reverseAdjustmentLines = async (session, adjustment, userId) => {
     const reverseDelta = -Number(line.delta || 0);
 
     await StockQuant.findOneAndUpdate(
-      { productId: line.productId },
+      { productId: line.productId, locationId: adjustment.locationId },
       { $inc: { quantity: reverseDelta } },
       { upsert: true, session }
     );
@@ -113,10 +113,7 @@ exports.getAdjustments = async (req, res, next) => {
     const total = await StockAdjustment.countDocuments(filter);
     const adjustments = await StockAdjustment.find(filter)
       .populate('lines.productId', 'name sku uom')
-      .populate({
-        path: 'locationId',
-        populate: { path: 'warehouseId', select: 'name shortCode' },
-      })
+      .populate('locationId', 'name shortCode')
       .populate('createdBy', 'name email')
       .sort('-createdAt')
       .skip((parseInt(page, 10) - 1) * parseInt(limit, 10))
@@ -146,17 +143,21 @@ exports.getAdjustments = async (req, res, next) => {
 exports.createAdjustment = async (req, res, next) => {
   const session = await mongoose.startSession();
   session.startTransaction();
+  let committed = false;
 
   try {
     const { reference: incomingRef, locationId, location, date, lines = [] } = req.body;
-    const resolvedLocationId = locationId || location;
+    const resolvedLocationId =
+      req.user.role === 'staff' && req.user.locationId
+        ? req.user.locationId
+        : locationId || location;
 
     if (!resolvedLocationId) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, message: 'locationId is required' });
     }
 
-    const normalizedLines = await normalizeLines(lines);
+    const normalizedLines = await normalizeLines(lines, resolvedLocationId);
     if (normalizedLines.length === 0) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, message: 'At least one valid product line is required' });
@@ -188,18 +189,17 @@ exports.createAdjustment = async (req, res, next) => {
 
     await applyAdjustmentLines(session, adjustment, req.user._id);
     await session.commitTransaction();
+    committed = true;
 
+    // Populate AFTER commit so the session is no longer active
     const populated = await StockAdjustment.findById(adjustment._id)
       .populate('lines.productId', 'name sku uom')
-      .populate({
-        path: 'locationId',
-        populate: { path: 'warehouseId', select: 'name shortCode' },
-      })
+      .populate('locationId', 'name shortCode')
       .populate('createdBy', 'name email');
 
     res.status(201).json({ success: true, data: populated });
   } catch (error) {
-    await session.abortTransaction();
+    if (!committed) await session.abortTransaction();
     next(error);
   } finally {
     session.endSession();
@@ -224,7 +224,10 @@ exports.updateAdjustment = async (req, res, next) => {
     }
 
     const { reference: incomingRef, locationId, location, date, lines = [] } = req.body;
-    const resolvedLocationId = locationId || location || adjustment.locationId;
+    const resolvedLocationId =
+      req.user.role === 'staff' && req.user.locationId
+        ? req.user.locationId
+        : locationId || location || adjustment.locationId;
 
     if (!Array.isArray(lines) || lines.length === 0) {
       await session.abortTransaction();
@@ -243,7 +246,7 @@ exports.updateAdjustment = async (req, res, next) => {
     await reverseAdjustmentLines(session, adjustment, req.user._id);
 
     // Recompute recorded quantities after reversal to keep stock math accurate on edits.
-    const normalizedLines = await normalizeLines(lines);
+    const normalizedLines = await normalizeLines(lines, resolvedLocationId);
     if (normalizedLines.length === 0) {
       await session.abortTransaction();
       return res.status(400).json({ success: false, message: 'At least one valid product line is required' });
@@ -259,10 +262,7 @@ exports.updateAdjustment = async (req, res, next) => {
 
     const populated = await StockAdjustment.findById(adjustment._id)
       .populate('lines.productId', 'name sku uom')
-      .populate({
-        path: 'locationId',
-        populate: { path: 'warehouseId', select: 'name shortCode' },
-      })
+      .populate('locationId', 'name shortCode')
       .populate('createdBy', 'name email');
 
     res.json({ success: true, data: populated });
@@ -283,10 +283,7 @@ exports.getAdjustment = async (req, res, next) => {
   try {
     const adjustment = await StockAdjustment.findById(req.params.id)
       .populate('lines.productId', 'name sku uom')
-      .populate({
-        path: 'locationId',
-        populate: { path: 'warehouseId', select: 'name shortCode' },
-      })
+      .populate('locationId', 'name shortCode')
       .populate('createdBy', 'name email');
 
     if (!adjustment) {

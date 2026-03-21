@@ -38,7 +38,6 @@ import AdjustmentFormPage from "./pages/adjustments/AdjustmentFormPage";
 import MoveHistoryPage from "./pages/moves/MoveHistoryPage";
 
 // Settings
-import WarehouseSettingsPage from "./pages/settings/WarehouseSettingsPage";
 import LocationSettingsPage from "./pages/settings/LocationSettingsPage";
 
 function PrivateRoute({ children }) {
@@ -220,14 +219,7 @@ export default function App() {
           <Route path="/operations/moves" element={<MoveHistoryPage />} />
 
           {/* ── Manager only: Settings ── */}
-          <Route
-            path="/settings/warehouses"
-            element={
-              <RoleGuard allowedRoles={["manager"]}>
-                <WarehouseSettingsPage />
-              </RoleGuard>
-            }
-          />
+
           <Route
             path="/settings/locations"
             element={

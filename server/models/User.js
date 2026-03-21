@@ -32,6 +32,11 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false, // Activated after OTP verification
     },
+    locationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Location',
+      // Required logic is handled dynamically in controller, not schema, since managers might not need it
+    },
     refreshToken: {
       type: String,
       select: false,

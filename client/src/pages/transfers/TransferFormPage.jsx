@@ -70,14 +70,8 @@ export default function TransferFormPage() {
 
   const srcLoc = watch("sourceLocation");
   const destLoc = watch("destinationLocation");
-  const srcText = watch("sourceText");
-  const destText = watch("destinationText");
   const sameLocation = srcLoc && destLoc && srcLoc === destLoc;
-  const sameTextLocation =
-    isStaff &&
-    !!srcText &&
-    !!destText &&
-    srcText.trim().toLowerCase() === destText.trim().toLowerCase();
+  
   const sourceLocationObj = locations.find(
     (loc) => String(loc._id || loc.id) === String(srcLoc),
   );
@@ -110,15 +104,12 @@ export default function TransferFormPage() {
           firstLine.fromLocationId?._id ||
           firstLine.fromLocationId ||
           "",
-        sourceText: transfer.sourceText || "",
         destinationLocation:
           transfer.destinationLocation?._id ||
           transfer.destinationLocation ||
           firstLine.toLocationId?._id ||
           firstLine.toLocationId ||
           "",
-        destinationText: transfer.destinationText || "",
-        warehouseLabel: transfer.warehouseLabel || "",
         scheduledDate: transfer.scheduledDate?.split("T")[0],
         notes: transfer.notes || "",
       });
@@ -128,10 +119,7 @@ export default function TransferFormPage() {
       reset({
         reference: previewRef("INT"),
         sourceLocation: "",
-        sourceText: "",
         destinationLocation: "",
-        destinationText: "",
-        warehouseLabel: "",
         scheduledDate: new Date().toISOString().split("T")[0],
         notes: "",
       });
@@ -157,18 +145,6 @@ export default function TransferFormPage() {
     onError: (err) => toast.error(err.response?.data?.message || "Save failed"),
   });
 
-  const validateMutation = useMutation({
-    mutationFn: () => transferService.validate(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["transfers"] });
-      queryClient.invalidateQueries({ queryKey: ["transfer", id] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-kpis"] });
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      toast.success("Transfer validated! Stock moved between locations.");
-    },
-    onError: (err) =>
-      toast.error(err.response?.data?.message || "Validation failed"),
-  });
 
   const cancelMutation = useMutation({
     mutationFn: () => transferService.cancel(id),
@@ -188,25 +164,9 @@ export default function TransferFormPage() {
       return;
     }
 
-    if (sameTextLocation) {
-      toast.error("From and To cannot be the same.");
-      return;
-    }
-
     if (isStaff && crossWarehouse) {
       toast.error("Staff transfers must stay inside the same warehouse.");
       return;
-    }
-
-    if (isStaff) {
-      if (!formData.warehouseLabel?.trim()) {
-        toast.error("Warehouse is required.");
-        return;
-      }
-      if (!formData.sourceText?.trim() || !formData.destinationText?.trim()) {
-        toast.error("From and To are required.");
-        return;
-      }
     }
 
     const hasPartialLines = (lines || []).some((line) => {
@@ -243,15 +203,6 @@ export default function TransferFormPage() {
     saveMutation.mutate({
       ...formData,
       moveLines,
-      ...(isStaff
-        ? {
-            sourceLocation: null,
-            destinationLocation: null,
-            sourceText: formData.sourceText?.trim(),
-            destinationText: formData.destinationText?.trim(),
-            warehouseLabel: formData.warehouseLabel?.trim(),
-          }
-        : {}),
       ...(isManager ? { status } : {}),
     });
   };
@@ -293,7 +244,7 @@ export default function TransferFormPage() {
               <Button
                 onClick={handleSubmit(onSave)}
                 loading={saveMutation.isPending}
-                disabled={!!sameLocation || !!sameTextLocation}
+                disabled={!!sameLocation}
               >
                 Save
               </Button>
@@ -303,12 +254,6 @@ export default function TransferFormPage() {
             <>
               <Button variant="secondary" onClick={() => setShowCancel(true)}>
                 Cancel
-              </Button>
-              <Button
-                onClick={() => validateMutation.mutate()}
-                loading={validateMutation.isPending}
-              >
-                {status === "ready" ? "Mark as Done" : "Validate"}
               </Button>
             </>
           )}
@@ -383,64 +328,6 @@ export default function TransferFormPage() {
             </div>
           )}
 
-          {isStaff ? (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Warehouse *
-                </label>
-                <input
-                  {...register("warehouseLabel", {
-                    required: "Warehouse is required",
-                  })}
-                  className="input-field"
-                  placeholder="e.g. Main Warehouse"
-                  disabled={isReadOnly}
-                />
-                {errors.warehouseLabel && (
-                  <p className="text-xs text-red-500 mt-1">{errors.warehouseLabel.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  From *
-                </label>
-                <input
-                  {...register("sourceText", {
-                    required: "From is required",
-                  })}
-                  className="input-field"
-                  placeholder="e.g. Rack 1"
-                  disabled={isReadOnly}
-                />
-                {errors.sourceText && (
-                  <p className="text-xs text-red-500 mt-1">{errors.sourceText.message}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                  To *
-                </label>
-                <input
-                  {...register("destinationText", {
-                    required: "To is required",
-                  })}
-                  className="input-field"
-                  placeholder="e.g. Rack 2"
-                  disabled={isReadOnly}
-                />
-                {errors.destinationText && (
-                  <p className="text-xs text-red-500 mt-1">{errors.destinationText.message}</p>
-                )}
-                {sameTextLocation && (
-                  <p className="text-xs text-red-500 mt-1">From and To cannot be the same.</p>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Source Location *
@@ -495,8 +382,6 @@ export default function TransferFormPage() {
                   </p>
                 )}
               </div>
-            </>
-          )}
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -524,7 +409,7 @@ export default function TransferFormPage() {
         </div>
         {isStaff && (
           <div className="text-sm text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-4 py-2 mb-3">
-            Staff transfer mode: use Warehouse, From, and To text fields. Transfer is completed immediately after save.
+            Staff transfer mode: Either the source or the destination must be your assigned location. Transfer is completed immediately after save.
           </div>
         )}
         <LineItemTable
