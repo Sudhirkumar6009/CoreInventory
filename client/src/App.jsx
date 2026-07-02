@@ -17,6 +17,9 @@ import LoginPage from "./pages/auth/LoginPage";
 import SignupPage from "./pages/auth/SignupPage";
 import ResetPasswordPage from "./pages/auth/ResetPasswordPage";
 
+// Home (public landing)
+import HomePage from "./pages/HomePage";
+
 // Dashboard
 import DashboardPage from "./pages/dashboard/DashboardPage";
 
@@ -44,7 +47,7 @@ function PrivateRoute({ children }) {
   const token = useAuthStore((s) => s.token);
   const location = useLocation();
   if (!token)
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/" state={{ from: location }} replace />;
   return children;
 }
 
@@ -66,6 +69,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public landing page */}
+        <Route path="/" element={<HomePage />} />
+
         {/* Public auth routes */}
         <Route element={<AuthLayout />}>
           <Route path="/login" element={<LoginPage />} />
@@ -81,7 +87,6 @@ export default function App() {
             </PrivateRoute>
           }
         >
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
 
           {/* ── Manager only: Product Catalogue ── */}
@@ -231,7 +236,7 @@ export default function App() {
         </Route>
 
         {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
