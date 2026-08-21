@@ -240,6 +240,16 @@ CoreInventory/
 - **npm** 9+
 - **MongoDB** (local instance or MongoDB Atlas)
 
+### Docker
+
+The Docker build uses the root `.env` as its single environment file for both services. The server receives its variables when the container starts, and `VITE_API_BASE_URL` is passed as a build argument because Vite embeds it into the static client bundle. Both images use the repository root as their build context and the root `.dockerignore`.
+
+Make sure `.env` contains all required values, including `VITE_API_BASE_URL`, then run from the repository root:
+
+```bash
+docker compose up --build
+```
+
 ### 1. Clone the Repository
 
 ```bash
@@ -247,17 +257,19 @@ git clone https://github.com/your-username/CoreInventory.git
 cd CoreInventory
 ```
 
-### 2. Set Up the Backend
-
-```bash
-cd server
-npm install
-```
+### 2. Configure the root environment
 
 Copy the example environment file and fill in your values:
 
 ```bash
 cp .env.example .env
+```
+
+### 3. Set Up the Backend
+
+```bash
+cd server
+npm install
 ```
 
 Start the development server:
@@ -268,18 +280,11 @@ npm run dev
 
 The API will be available at `http://localhost:5000`.
 
-### 3. Set Up the Frontend
+### 4. Set Up the Frontend
 
 ```bash
 cd ../client
 npm install
-```
-
-Create the frontend environment file:
-
-```bash
-# client/.env
-VITE_API_BASE_URL=http://localhost:5000/api
 ```
 
 Start the development server:
@@ -294,7 +299,7 @@ The app will be available at `http://localhost:5173`.
 
 ## 🔐 Environment Variables
 
-### `server/.env`
+### Root `.env`
 
 ```env
 # Server
@@ -313,15 +318,14 @@ JWT_REFRESH_EXPIRE=7d
 # Email (for OTP delivery)
 GMAIL_ID=your_gmail@gmail.com
 GMAIL_PASSWORD=your_gmail_app_password
-```
 
-> **Tip:** Use a [Gmail App Password](https://myaccount.google.com/apppasswords) instead of your account password for `GMAIL_PASSWORD`.
-
-### `client/.env`
-
-```env
+# Client (Vite)
 VITE_API_BASE_URL=http://localhost:5000/api
 ```
+
+The root `.env` is used by Docker Compose, the server, and the Vite client. It is excluded from Git and Docker build contexts; use `.env.example` as the safe template. `VITE_API_BASE_URL` is public client configuration and is embedded into the client bundle during `docker compose up --build`.
+
+> **Tip:** Use a [Gmail App Password](https://myaccount.google.com/apppasswords) instead of your account password for `GMAIL_PASSWORD`.
 
 ---
 
