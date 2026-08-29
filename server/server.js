@@ -6,8 +6,8 @@ const cookieParser = require('cookie-parser');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
-// Load env vars
-dotenv.config();
+// Load local variables when running outside Docker; Compose injects them in Docker.
+dotenv.config({ path: require('path').resolve(__dirname, '..', '.env') });
 
 // Connect to database
 connectDB();
@@ -19,6 +19,8 @@ app.use(helmet());
 
 const allowedOrigins = [
   'https://core-inventory-het.vercel.app',
+  'http://localhost',
+  'http://127.0.0.1',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ];
